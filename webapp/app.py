@@ -145,6 +145,10 @@ _KHARON_CSS = """
     .stAlert {
         border-radius: 8px;
     }
+
+    header[data-testid="stHeader"] {
+        display: none !important;
+    }
 </style>
 """
 
@@ -216,7 +220,7 @@ def _render_sidebar() -> None:
             f'<img src="{_KHARON_LOGO_URI}" alt="Kharōn" style="width:180px; margin:0 auto; display:block;" />'
             f'</div>'
             f'<div style="text-align:center; padding: 0 0 8px 0;">'
-            f'<span style="font-size:0.7em; color:#9ca3af; letter-spacing:0.5px;">Data Engineering Division</span>'
+            f'<span style="font-size:0.7em; color:#9ca3af; letter-spacing:0.5px;">Sistema de Monitoreo y Ejecución</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
