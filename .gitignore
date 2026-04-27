@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+airflow_venv/
+.venv/
+venv/
+
+# Airflow
+airflow_home/airflow.db
+airflow_home/airflow.cfg
+airflow_home/webserver_config.py
+airflow_home/logs/
+airflow_home/data/
+
+# Kharōn monitoring data
+airflow_home/logs/kharon_monitoring/*.json
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Environment
+.env
+.env.local
+
+# Secrets
+*.pem
+*.key
+credentials.*
