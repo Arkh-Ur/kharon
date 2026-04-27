@@ -36,7 +36,13 @@ export AIRFLOW_HOME="${KHARON_HOME}/airflow_home"
 export KHARON_AIRFLOW_HOST="${KHARON_AIRFLOW_HOST:-localhost}"
 export KHARON_AIRFLOW_PORT="${KHARON_AIRFLOW_PORT:-8080}"
 export KHARON_AIRFLOW_USER="${KHARON_AIRFLOW_USER:-admin}"
-export KHARON_AIRFLOW_PASSWORD="${KHARON_AIRFLOW_PASSWORD:-admin}"
+
+Pw_FILE="${AIRFLOW_HOME}/simple_auth_manager_passwords.json.generated"
+if [ -f "$Pw_FILE" ]; then
+    export KHARON_AIRFLOW_PASSWORD="${KHARON_AIRFLOW_PASSWORD:-$(python3 -c "import json; print(json.load(open('$Pw_FILE'))['admin'])" 2>/dev/null || echo 'admin')}"
+else
+    export KHARON_AIRFLOW_PASSWORD="${KHARON_AIRFLOW_PASSWORD:-admin}"
+fi
 
 # Kharōn webapp port
 export KHARON_PORT="${KHARON_PORT:-8501}"
@@ -108,25 +114,39 @@ init_airflow() {
 start_airflow() {
     log_info "Starting Airflow services..."
     
+    # Airflow 3.x requires a separate dag-processor daemon
+    # (standalone_dag_processor defaults to True in 3.x)
+    AIRFLOW_BIN="${VENV_DIR}/bin/airflow"
+    
+    # Start DAG processor in background (parses DAG files into the DB)
+    "$AIRFLOW_BIN" dag-processor &> "${AIRFLOW_HOME}/logs/dag-processor.log" &
+    DAGPROC_PID=$!
+    log_info "Airflow DAG Processor started (PID: $DAGPROC_PID)"
+    
     # Start scheduler in background
-    airflow scheduler &> "${AIRFLOW_HOME}/logs/scheduler.log" &
+    "$AIRFLOW_BIN" scheduler &> "${AIRFLOW_HOME}/logs/scheduler.log" &
     SCHEDULER_PID=$!
     log_info "Airflow Scheduler started (PID: $SCHEDULER_PID)"
     
     # Start API server
-    airflow api-server --port "$KHARON_AIRFLOW_PORT" &> "${AIRFLOW_HOME}/logs/api-server.log" &
+    "$AIRFLOW_BIN" api-server --port "$KHARON_AIRFLOW_PORT" &> "${AIRFLOW_HOME}/logs/api-server.log" &
     API_PID=$!
     log_info "Airflow API Server started (PID: $API_PID, port: $KHARON_AIRFLOW_PORT)"
     
-    # Wait for Airflow to be ready
-    log_info "Waiting for Airflow to be ready..."
-    MAX_WAIT=60
+    # Wait for DAG processor to parse DAGs (~30s on first run)
+    log_info "Waiting for DAG processor to parse DAG files..."
+    sleep 10
+    
+    # Wait for Airflow API to be ready
+    log_info "Waiting for Airflow API to be ready..."
+    MAX_WAIT=90
     WAITED=0
-    while ! curl -s "http://${KHARON_AIRFLOW_HOST}:${KHARON_AIRFLOW_PORT}/health" > /dev/null 2>&1; do
+    while ! curl -s "http://${KHARON_AIRFLOW_HOST}:${KHARON_AIRFLOW_PORT}/api/v2/monitor/health" > /dev/null 2>&1; do
         sleep 2
         WAITED=$((WAITED + 2))
         if [ $WAITED -ge $MAX_WAIT ]; then
-            log_error "Airflow did not start within ${MAX_WAIT}s"
+            log_error "Airflow API did not start within ${MAX_WAIT}s"
+            log_error "Check logs: ${AIRFLOW_HOME}/logs/api-server.log"
             exit 1
         fi
         echo -n "."
@@ -170,12 +190,17 @@ cleanup() {
         log_info "Airflow API Server stopped"
     fi
     
+    if [ -n "$DAGPROC_PID" ]; then
+        kill $DAGPROC_PID 2>/dev/null || true
+        log_info "Airflow DAG Processor stopped"
+    fi
+    
     if [ -n "$SCHEDULER_PID" ]; then
         kill $SCHEDULER_PID 2>/dev/null || true
         log_info "Airflow Scheduler stopped"
     fi
     
-    # Kill any remaining airflow processes
+    pkill -f "airflow dag-processor" 2>/dev/null || true
     pkill -f "airflow scheduler" 2>/dev/null || true
     pkill -f "airflow api-server" 2>/dev/null || true
     

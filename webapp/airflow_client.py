@@ -1,7 +1,6 @@
-"""
-Airflow REST API client for Kharōn webapp.
+"""Airflow REST API client for Kharōn webapp (Airflow 3.x compatible).
 
-Provides methods to interact with Airflow API for DAG management and monitoring.
+Uses JWT cookie-based auth via /api/v2/auth/login flow.
 """
 
 import json
@@ -14,22 +13,13 @@ import config
 
 
 class AirflowClientError(Exception):
-    """Custom exception for Airflow API errors."""
-    
+
     def __init__(self, message: str, status_code: Optional[int] = None, response: Optional[Dict] = None):
-        """Initialize AirflowClientError.
-        
-        Args:
-            message: Error message
-            status_code: HTTP status code if available
-            response: Full response dict if available
-        """
         super().__init__(message)
         self.status_code = status_code
         self.response = response
-        
+
     def __str__(self) -> str:
-        """String representation of the error."""
         base_msg = super().__str__()
         if self.status_code:
             base_msg += f" (HTTP {self.status_code})"
@@ -39,249 +29,152 @@ class AirflowClientError(Exception):
 
 
 class AirflowClient:
-    """Airflow REST API client."""
-    
+
+    API_PREFIX = "/api/v2"
+
     def __init__(self, base_url: Optional[str] = None, username: Optional[str] = None, password: Optional[str] = None):
-        """Initialize AirflowClient.
-        
-        Args:
-            base_url: Airflow base URL. If None, uses config.AIRFLOW_BASE_URL
-            username: Airflow username. If None, uses config.AIRFLOW_USER
-            password: Airflow password. If None, uses config.AIRFLOW_PASSWORD
-        """
         self.base_url = base_url or config.AIRFLOW_BASE_URL
         self.username = username or config.AIRFLOW_USER
         self.password = password or config.AIRFLOW_PASSWORD
-        
-        # Create session with Basic Auth and timeout
+
         self.session = requests.Session()
-        self.session.auth = HTTPBasicAuth(self.username, self.password)
         self.session.timeout = 30
-        
-        # Set default headers
         self.session.headers.update({
             'Content-Type': 'application/json',
             'Accept': 'application/json',
         })
-    
+        self._authenticate()
+
+    def _authenticate(self) -> None:
+        login_url = f"{self.base_url}/api/v2/auth/login"
+        try:
+            response = self.session.get(
+                login_url,
+                auth=HTTPBasicAuth(self.username, self.password),
+                allow_redirects=True,
+            )
+            if '_token' not in self.session.cookies.get_dict():
+                raise AirflowClientError(
+                    "Authentication failed: no JWT token received from Airflow",
+                    status_code=response.status_code,
+                )
+        except RequestException as e:
+            raise AirflowClientError(f"Auth request failed: {str(e)}") from e
+
     def _request(self, method: str, endpoint: str, **kwargs) -> Dict:
-        """Make unified HTTP request to Airflow API.
-        
-        Args:
-            method: HTTP method (GET, POST, PATCH, etc.)
-            endpoint: API endpoint path (e.g., '/health')
-            **kwargs: Additional request parameters
-            
-        Returns:
-            JSON response as dict
-            
-        Raises:
-            AirflowClientError: If request fails
-        """
         url = f"{self.base_url}{endpoint}"
-        
+
+        if '_token' not in self.session.cookies.get_dict():
+            self._authenticate()
+
         try:
             response = self.session.request(method, url, **kwargs)
-            
-            # Handle non-successful responses
+
+            if response.status_code == 401:
+                self._authenticate()
+                response = self.session.request(method, url, **kwargs)
+
             if not response.ok:
                 try:
                     error_data = response.json()
                 except (ValueError, json.JSONDecodeError):
                     error_data = {"error": response.text}
-                
+
                 raise AirflowClientError(
                     f"Request failed: {response.status_code} {response.reason}",
                     status_code=response.status_code,
-                    response=error_data
+                    response=error_data,
                 )
-            
-            # Parse JSON response
-            return response.json()
-            
+
+            if response.text.strip():
+                return response.json()
+            return {}
+
         except RequestException as e:
+            if isinstance(e, AirflowClientError):
+                raise
             raise AirflowClientError(f"Request failed: {str(e)}") from e
-    
+
     def health_check(self) -> Dict:
-        """Check Airflow API health status.
-        
-        Returns:
-            Health check response dict
-            
-        Raises:
-            AirflowClientError: If health check fails
-        """
-        return self._request("GET", "/health")
-    
+        return self._request("GET", f"{self.API_PREFIX}/monitor/health")
+
     def list_dags(self, limit: int = 100, offset: int = 0) -> List[Dict]:
-        """List all DAGs.
-        
-        Args:
-            limit: Maximum number of DAGs to return
-            offset: Offset for pagination
-            
-        Returns:
-            List of DAG dictionaries
-            
-        Raises:
-            AirflowClientError: If request fails
-        """
-        endpoint = "/api/v1/dags"
+        endpoint = f"{self.API_PREFIX}/dags"
         params = {"limit": limit, "offset": offset}
-        
+
         try:
             response = self._request("GET", endpoint, params=params)
             return response.get("dags", [])
         except AirflowClientError:
             raise
-    
+
     def get_dag(self, dag_id: str) -> Dict:
-        """Get a specific DAG.
-        
-        Args:
-            dag_id: The DAG identifier
-            
-        Returns:
-            DAG dictionary
-            
-        Raises:
-            AirflowClientError: If request fails
-        """
-        endpoint = f"/api/v1/dags/{dag_id}"
-        
+        endpoint = f"{self.API_PREFIX}/dags/{dag_id}"
+
         try:
             return self._request("GET", endpoint)
         except AirflowClientError:
             raise
-    
+
     def trigger_dag(self, dag_id: str, conf: Optional[Dict] = None) -> Dict:
-        """Trigger a DAG run.
-        
-        Args:
-            dag_id: The DAG identifier
-            conf: Optional configuration for the DAG run
-            
-        Returns:
-            Trigger response dictionary
-            
-        Raises:
-            AirflowClientError: If request fails
-        """
-        endpoint = f"/api/v1/dags/{dag_id}/dagRuns"
-        data = {"conf": conf} if conf else {}
-        
+        from datetime import datetime, timezone
+        endpoint = f"{self.API_PREFIX}/dags/{dag_id}/dagRuns"
+        data = {
+            "logical_date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        if conf:
+            data["conf"] = conf
+
         try:
             return self._request("POST", endpoint, json=data)
         except AirflowClientError:
             raise
-    
+
     def list_dag_runs(self, dag_id: str, limit: int = 50, state: Optional[str] = None) -> List[Dict]:
-        """List DAG runs for a specific DAG.
-        
-        Args:
-            dag_id: The DAG identifier
-            limit: Maximum number of runs to return
-            state: Filter by state (e.g., 'running', 'success', 'failed')
-            
-        Returns:
-            List of DAG run dictionaries
-            
-        Raises:
-            AirflowClientError: If request fails
-        """
-        endpoint = f"/api/v1/dags/{dag_id}/dagRuns"
+        endpoint = f"{self.API_PREFIX}/dags/{dag_id}/dagRuns"
         params = {"limit": limit}
-        
+
         if state:
             params["state"] = state
-            
+
         try:
             response = self._request("GET", endpoint, params=params)
             return response.get("dag_runs", [])
         except AirflowClientError:
             raise
-    
+
     def get_dag_run(self, dag_id: str, dag_run_id: str) -> Dict:
-        """Get a specific DAG run.
-        
-        Args:
-            dag_id: The DAG identifier
-            dag_run_id: The DAG run identifier
-            
-        Returns:
-            DAG run dictionary
-            
-        Raises:
-            AirflowClientError: If request fails
-        """
-        endpoint = f"/api/v1/dags/{dag_id}/dagRuns/{dag_run_id}"
-        
+        endpoint = f"{self.API_PREFIX}/dags/{dag_id}/dagRuns/{dag_run_id}"
+
         try:
             return self._request("GET", endpoint)
         except AirflowClientError:
             raise
-    
+
     def list_task_instances(self, dag_id: str, dag_run_id: str) -> List[Dict]:
-        """List task instances for a DAG run.
-        
-        Args:
-            dag_id: The DAG identifier
-            dag_run_id: The DAG run identifier
-            
-        Returns:
-            List of task instance dictionaries
-            
-        Raises:
-            AirflowClientError: If request fails
-        """
-        endpoint = f"/api/v1/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances"
-        
+        endpoint = f"{self.API_PREFIX}/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances"
+
         try:
             response = self._request("GET", endpoint)
             return response.get("task_instances", [])
         except AirflowClientError:
             raise
-    
+
     def get_task_log(self, dag_id: str, dag_run_id: str, task_id: str, try_number: int = 1) -> str:
-        """Get task execution log.
-        
-        Args:
-            dag_id: The DAG identifier
-            dag_run_id: The DAG run identifier
-            task_id: The task identifier
-            try_number: The try number for the task
-            
-        Returns:
-            Task log as string
-            
-        Raises:
-            AirflowClientError: If request fails
-        """
-        endpoint = f"/api/v1/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id}/log"
-        params = {"try_number": try_number}
-        
+        endpoint = f"{self.API_PREFIX}/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id}/logs/{try_number}"
+
         try:
-            response = self._request("GET", endpoint, params=params)
-            return response.get("log", "")
-        except AirflowClientError:
-            raise
-    
+            response = self.session.request("GET", f"{self.base_url}{endpoint}")
+            if response.ok:
+                return response.text
+            return ""
+        except RequestException:
+            return ""
+
     def pause_dag(self, dag_id: str, paused: bool = True) -> Dict:
-        """Pause or unpause a DAG.
-        
-        Args:
-            dag_id: The DAG identifier
-            paused: True to pause, False to unpause
-            
-        Returns:
-            Update response dictionary
-            
-        Raises:
-            AirflowClientError: If request fails
-        """
-        endpoint = f"/api/v1/dags/{dag_id}"
+        endpoint = f"{self.API_PREFIX}/dags/{dag_id}"
         data = {"is_paused": paused}
-        
+
         try:
             return self._request("PATCH", endpoint, json=data)
         except AirflowClientError:

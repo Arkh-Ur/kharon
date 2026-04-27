@@ -60,7 +60,6 @@ pip install -r requirements.txt
 # 4. Inicializar Airflow
 export AIRFLOW_HOME=$(pwd)/airflow_home
 airflow db migrate
-airflow users create --username admin --password admin --firstname Admin --lastname ArkhUr --role Admin --email admin@arkh-ur.com
 
 # 5. Iniciar Kharōn
 chmod +x start_kharon.sh
