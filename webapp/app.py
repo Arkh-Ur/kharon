@@ -60,18 +60,40 @@ _KHARON_CSS = """
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0A0F18 0%, #131923 100%);
     }
-    [data-testid="stSidebar"] * {
-        color: #e5e7eb !important;
+    [data-testid="stSidebar"] > div > div {
+        display: flex;
+        flex-direction: column;
     }
-    [data-testid="stSidebar"] .stButton > button {
+    [data-testid="stSidebar"] section[data-testid="stSidebarContent"] {
+        flex: 1;
+    }
+    [data-testid="stSidebar"] .stButton {
+        width: 100%;
+    }
+    [data-testid="stSidebar"] .stButton .element-container,
+    [data-testid="stSidebar"] .stButton [data-testid="stBaseButton-secondary"],
+    [data-testid="stSidebar"] .stButton [data-testid="stBaseButton-primary"] {
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        display: block !important;
+    }
+    [data-testid="stSidebar"] .stButton > button,
+    [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"],
+    [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] {
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
         background: rgba(30, 38, 50, 0.8);
         border: 1px solid #545B67;
         color: #e5e7eb !important;
         width: 100%;
+        min-width: 100%;
         text-align: left;
         padding: 10px 16px;
         border-radius: 6px;
         transition: all 0.2s;
+        display: block;
     }
     [data-testid="stSidebar"] .stButton > button:hover {
         background: rgba(55, 65, 81, 0.6);
@@ -122,35 +144,6 @@ _KHARON_CSS = """
 
     .stAlert {
         border-radius: 8px;
-    }
-
-    [data-testid="stMarkdownContainer"] p,
-    [data-testid="stMarkdownContainer"] span,
-    [data-testid="stMarkdownContainer"] label {
-        color: #e5e7eb;
-    }
-
-    .stCaption {
-        color: #9ca3af !important;
-    }
-
-    [data-testid="stDivider"] {
-        border-color: #545B67;
-    }
-
-    .stSelectbox label, .stTextInput label, .stTextArea label,
-    .stNumberInput label, .stCheckbox label {
-        color: #9ca3af !important;
-    }
-
-    [data-testid="stExpander"] {
-        border-color: #545B67;
-        background: rgba(19, 25, 35, 0.6);
-    }
-
-    [data-testid="stForm"] {
-        border-color: #545B67;
-        background: rgba(19, 25, 35, 0.4);
     }
 </style>
 """
@@ -231,8 +224,14 @@ def _render_sidebar() -> None:
 
         for page in _PAGES:
             is_active = st.session_state.current_page == page
-            btn_type = "primary" if is_active else "secondary"
-            if st.button(page, key=f"nav_{page}", type=btn_type):
+            icon, label = page.split(" ", 1)
+            active_cls = "nav-btn-active" if is_active else "nav-btn"
+            if st.button(
+                f"{icon} {label}",
+                key=f"nav_{page}",
+                type="primary" if is_active else "secondary",
+                use_container_width=True,
+            ):
                 st.session_state.current_page = page
                 st.rerun()
 
