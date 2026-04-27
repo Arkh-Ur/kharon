@@ -6,12 +6,12 @@ from .status_badge import render_status_badge, render_client_badge
 
 
 _STATUS_BORDER_COLORS = {
-    "success": "#198754",
-    "failed": "#dc3545",
-    "running": "#fd7e14",
-    "queued": "#0d6efd",
-    "paused": "#6c757d",
-    "unknown": "#6c757d",
+    "success": "#22c55e",
+    "failed": "#ef4444",
+    "running": "#f59e0b",
+    "queued": "#3b82f6",
+    "paused": "#545B67",
+    "unknown": "#545B67",
 }
 
 
@@ -33,7 +33,7 @@ def render_dag_card(dag_info: dict, client_badge: str = None) -> None:
     schedule = dag_info.get("schedule_interval") or dag_info.get("schedule", "—")
     owners = dag_info.get("owners", [])
 
-    border_color = _STATUS_BORDER_COLORS.get(status, "#6c757d")
+    border_color = _STATUS_BORDER_COLORS.get(status, "#545B67")
 
     if last_run:
         try:
@@ -47,17 +47,17 @@ def render_dag_card(dag_info: dict, client_badge: str = None) -> None:
     card_html = f"""
     <div style="
         border-left: 4px solid {border_color};
-        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        background: #1E2632;
         padding: 16px 20px;
         border-radius: 0 8px 8px 0;
         margin-bottom: 12px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
     ">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <span style="font-size:1.05em; font-weight:700; color:#1a1a2e;">{dag_id}</span>
+            <span style="font-size:1.05em; font-weight:700; color:#e5e7eb;">{dag_id}</span>
         </div>
-        <div style="font-size:0.85em; color:#495057; margin-bottom:10px;">{description}</div>
-        <div style="display:flex; gap:16px; font-size:0.78em; color:#6c757d;">
+        <div style="font-size:0.85em; color:#9ca3af; margin-bottom:10px;">{description}</div>
+        <div style="display:flex; gap:16px; font-size:0.78em; color:#6b7280;">
             <span>📅 {last_run_display}</span>
             <span>🕐 {schedule}</span>
             {f'<span>👤 {", ".join(owners)}</span>' if owners else ''}
@@ -71,4 +71,4 @@ def render_dag_card(dag_info: dict, client_badge: str = None) -> None:
         render_status_badge(status)
     if client_badge:
         with col_client:
-            render_client_badge({"name": client_badge, "color": "#4a1a8a", "icon": "🏢"})
+            render_client_badge({"name": client_badge, "color": "#374151", "icon": "🏢"})

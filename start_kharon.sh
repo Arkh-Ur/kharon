@@ -8,7 +8,7 @@
 set -e
 
 # Colors for output
-PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 KHARON_ICON="⚓"
 
-echo -e "${PURPLE}"
+echo -e "${CYAN}"
 echo "  ╔══════════════════════════════════════════╗"
 echo "  ║     $KHARON_ICON  Kharōn — Arkh-Ur               ║"
 echo "  ║   Plataforma de Orquestación y          ║"
@@ -167,10 +167,10 @@ start_webapp() {
         --server.port "$KHARON_PORT" \
         --server.address "0.0.0.0" \
         --browser.gatherUsageStats false \
-        --theme.primaryColor "#4a1a8a" \
-        --theme.backgroundColor "#ffffff" \
-        --theme.secondaryBackgroundColor "#f8f9fa" \
-        --theme.textColor "#212529" \
+        --theme.primaryColor "#374151" \
+        --theme.backgroundColor "#0A0F18" \
+        --theme.secondaryBackgroundColor "#131923" \
+        --theme.textColor "#e5e7eb" \
         &
     WEBAPP_PID=$!
     cd "$KHARON_HOME"
@@ -223,14 +223,14 @@ start_airflow
 start_webapp
 
 echo ""
-echo -e "${PURPLE}══════════════════════════════════════════════${NC}"
+echo -e "${CYAN}══════════════════════════════════════════════${NC}"
 echo -e "${GREEN}  $KHARON_ICON Kharōn is running!${NC}"
 echo ""
 echo -e "  Airflow UI:   ${GREEN}http://${KHARON_AIRFLOW_HOST}:${KHARON_AIRFLOW_PORT}${NC}"
 echo -e "  Kharōn App:   ${GREEN}http://localhost:${KHARON_PORT}${NC}"
 echo ""
 echo -e "  Press ${YELLOW}Ctrl+C${NC} to stop"
-echo -e "${PURPLE}══════════════════════════════════════════════${NC}"
+echo -e "${CYAN}══════════════════════════════════════════════${NC}"
 
 # Wait for shutdown
 wait

@@ -57,8 +57,8 @@ def _render_step_progress(current: int) -> None:
     cols = st.columns(len(_STEPS))
     for i, col in enumerate(cols):
         with col:
-            bg = "#4a1a8a" if i <= current else "#dee2e6"
-            text_c = "#ffffff" if i <= current else "#6c757d"
+            bg = "#374151" if i <= current else "#1E2632"
+            text_c = "#e5e7eb" if i <= current else "#545B67"
             st.markdown(
                 f'<div style="'
                 f'background:{bg};color:{text_c};'

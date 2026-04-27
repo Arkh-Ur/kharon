@@ -24,28 +24,34 @@ from components.status_badge import (
 _KHARON_CSS = """
 <style>
     :root {
-        --primary: #4a1a8a;
-        --primary-light: #6f42c1;
-        --secondary: #0d6efd;
-        --success: #198754;
-        --warning: #fd7e14;
-        --danger: #dc3545;
-        --bg-dark: #1a1a2e;
-        --bg-card: #f8f9fa;
-        --text-dark: #1a1a2e;
-        --text-muted: #6c757d;
+        --primary: #374151;
+        --primary-light: #545B67;
+        --secondary: #1E2632;
+        --success: #22c55e;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+        --info: #3b82f6;
+        --bg-dark: #0A0F18;
+        --bg-card: #1E2632;
+        --text-dark: #e5e7eb;
+        --text-muted: #9ca3af;
+        --border-color: #545B67;
+    }
+
+    .stApp {
+        background-color: #0A0F18;
     }
 
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+        background: linear-gradient(180deg, #0A0F18 0%, #131923 100%);
     }
     [data-testid="stSidebar"] * {
-        color: #e0e0e0 !important;
+        color: #e5e7eb !important;
     }
     [data-testid="stSidebar"] .stButton > button {
-        background: rgba(255,255,255,0.08);
-        border: 1px solid rgba(255,255,255,0.15);
-        color: #e0e0e0 !important;
+        background: rgba(30, 38, 50, 0.8);
+        border: 1px solid #545B67;
+        color: #e5e7eb !important;
         width: 100%;
         text-align: left;
         padding: 10px 16px;
@@ -53,16 +59,21 @@ _KHARON_CSS = """
         transition: all 0.2s;
     }
     [data-testid="stSidebar"] .stButton > button:hover {
-        background: rgba(74,26,138,0.5);
-        border-color: #6f42c1;
+        background: rgba(55, 65, 81, 0.6);
+        border-color: #545B67;
+    }
+    [data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
+        background: rgba(55, 65, 81, 0.9);
+        border-color: #374151;
+        color: #e5e7eb !important;
     }
 
     .metric-card {
-        background: linear-gradient(135deg, var(--bg-card) 0%, #ffffff 100%);
+        background: #1E2632;
         border-radius: 10px;
         padding: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        border: 1px solid #e9ecef;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+        border: 1px solid #545B67;
         text-align: center;
     }
     .metric-card .metric-value {
@@ -73,14 +84,14 @@ _KHARON_CSS = """
     }
     .metric-card .metric-label {
         font-size: 0.85em;
-        color: var(--text-muted);
+        color: #9ca3af;
         margin-top: 4px;
     }
 
     .health-bar {
         height: 8px;
         border-radius: 4px;
-        background: #e9ecef;
+        background: #1E2632;
         overflow: hidden;
         margin-top: 4px;
     }
@@ -91,11 +102,40 @@ _KHARON_CSS = """
     }
 
     h1, h2, h3 {
-        color: var(--primary) !important;
+        color: #e5e7eb !important;
     }
 
     .stAlert {
         border-radius: 8px;
+    }
+
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] span,
+    [data-testid="stMarkdownContainer"] label {
+        color: #e5e7eb;
+    }
+
+    .stCaption {
+        color: #9ca3af !important;
+    }
+
+    [data-testid="stDivider"] {
+        border-color: #545B67;
+    }
+
+    .stSelectbox label, .stTextInput label, .stTextArea label,
+    .stNumberInput label, .stCheckbox label {
+        color: #9ca3af !important;
+    }
+
+    [data-testid="stExpander"] {
+        border-color: #545B67;
+        background: rgba(19, 25, 35, 0.6);
+    }
+
+    [data-testid="stForm"] {
+        border-color: #545B67;
+        background: rgba(19, 25, 35, 0.4);
     }
 </style>
 """
@@ -166,8 +206,8 @@ def _render_sidebar() -> None:
         st.markdown(
             '<div style="text-align:center; padding: 16px 0;">'
             '<span style="font-size:2em;">⚓</span><br/>'
-            '<span style="font-size:1.4em; font-weight:800; color:#ffffff;">Kharōn</span><br/>'
-            '<span style="font-size:0.75em; color:#adb5bd;">Arkh-Ur — Data Engineering</span>'
+            '<span style="font-size:1.4em; font-weight:800; color:#e5e7eb;">Kharōn</span><br/>'
+            '<span style="font-size:0.75em; color:#9ca3af;">Arkh-Ur — Data Engineering</span>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -237,10 +277,10 @@ def _page_dashboard() -> None:
 
     col1, col2, col3, col4 = st.columns(4)
     for col, label, value, color in [
-        (col1, "Total DAGs", total, "#4a1a8a"),
-        (col2, "Exitosos", success_count, "#198754"),
-        (col3, "Fallidos", failed_count, "#dc3545"),
-        (col4, "Ejecutando", running_count, "#fd7e14"),
+        (col1, "Total DAGs", total, "#374151"),
+        (col2, "Exitosos", success_count, "#22c55e"),
+        (col3, "Fallidos", failed_count, "#ef4444"),
+        (col4, "Ejecutando", running_count, "#f59e0b"),
     ]:
         with col:
             st.markdown(
@@ -370,7 +410,7 @@ def _page_execute_scripts() -> None:
         return
 
     for client_name, client_dags in grouped.items():
-        client_info = clients_map.get(client_name.lower(), {"name": client_name, "color": "#4a1a8a", "icon": "🏢"})
+        client_info = clients_map.get(client_name.lower(), {"name": client_name, "color": "#374151", "icon": "🏢"})
         with st.expander(f"🏢 {client_name} ({len(client_dags)} scripts)", expanded=True):
             render_client_badge(client_info)
             st.markdown("---")
@@ -571,10 +611,10 @@ def _page_global_monitoring() -> None:
 
     col1, col2, col3, col4 = st.columns(4)
     for col, label, value, color in [
-        (col1, "Total Ejecuciones", total_f, "#4a1a8a"),
-        (col2, "Exitosas", success_f, "#198754"),
-        (col3, "Fallidas", failed_f, "#dc3545"),
-        (col4, "En ejecución", running_f, "#fd7e14"),
+        (col1, "Total Ejecuciones", total_f, "#374151"),
+        (col2, "Exitosas", success_f, "#22c55e"),
+        (col3, "Fallidas", failed_f, "#ef4444"),
+        (col4, "En ejecución", running_f, "#f59e0b"),
     ]:
         with col:
             st.markdown(
@@ -646,7 +686,7 @@ def _page_health_by_client() -> None:
         unhealthy_count = sum(1 for s in scripts if s.get("status") == "unhealthy")
 
         health_pct = (healthy_count / total_scripts * 100) if total_scripts > 0 else 0
-        bar_color = "#198754" if health_pct >= 80 else "#fd7e14" if health_pct >= 50 else "#dc3545"
+        bar_color = "#22c55e" if health_pct >= 80 else "#f59e0b" if health_pct >= 50 else "#ef4444"
 
         with st.container():
             col_header, col_bar = st.columns([2, 3])
@@ -778,7 +818,7 @@ def _page_configuration() -> None:
     st.subheader("Agregar Cliente")
     with st.form("add_client_form"):
         new_name = st.text_input("Nombre del cliente *", placeholder="ej: ACME Corp")
-        new_color = st.color_picker("Color", value="#4a1a8a", key="new_client_color")
+        new_color = st.color_picker("Color", value="#374151", key="new_client_color")
         new_icon = st.text_input("Icono (emoji)", value="🏢", key="new_client_icon")
         new_description = st.text_area("Descripción", placeholder="Descripción del cliente...", key="new_client_desc")
 

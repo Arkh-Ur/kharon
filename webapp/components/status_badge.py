@@ -2,22 +2,22 @@ import streamlit as st
 
 
 _STATUS_CONFIG = {
-    "success":      {"color": "#198754", "bg": "#d1e7dd", "label": "Exitoso",   "icon": "✅"},
-    "failed":       {"color": "#dc3545", "bg": "#f8d7da", "label": "Fallido",    "icon": "❌"},
-    "running":      {"color": "#fd7e14", "bg": "#fff3cd", "label": "Ejecutando", "icon": "🔄"},
-    "queued":       {"color": "#0d6efd", "bg": "#cfe2ff", "label": "En cola",   "icon": "⏳"},
-    "paused":       {"color": "#6c757d", "bg": "#e2e3e5", "label": "Pausado",    "icon": "⏸️"},
-    "up_for_retry": {"color": "#fd7e14", "bg": "#fff3cd", "label": "Reintentando", "icon": "🔁"},
-    "upstream_failed": {"color": "#dc3545", "bg": "#f8d7da", "label": "Padre fallido", "icon": "⚠️"},
-    "skipped":      {"color": "#6c757d", "bg": "#e2e3e5", "label": "Omitido",   "icon": "⏭️"},
-    "unknown":      {"color": "#6c757d", "bg": "#e2e3e5", "label": "Desconocido", "icon": "❓"},
+    "success":      {"color": "#22c55e", "bg": "rgba(34,197,94,0.15)", "label": "Exitoso",   "icon": "✅"},
+    "failed":       {"color": "#ef4444", "bg": "rgba(239,68,68,0.15)", "label": "Fallido",    "icon": "❌"},
+    "running":      {"color": "#f59e0b", "bg": "rgba(245,158,11,0.15)", "label": "Ejecutando", "icon": "🔄"},
+    "queued":       {"color": "#3b82f6", "bg": "rgba(59,130,246,0.15)", "label": "En cola",   "icon": "⏳"},
+    "paused":       {"color": "#9ca3af", "bg": "rgba(156,163,175,0.15)", "label": "Pausado",    "icon": "⏸️"},
+    "up_for_retry": {"color": "#f59e0b", "bg": "rgba(245,158,11,0.15)", "label": "Reintentando", "icon": "🔁"},
+    "upstream_failed": {"color": "#ef4444", "bg": "rgba(239,68,68,0.15)", "label": "Padre fallido", "icon": "⚠️"},
+    "skipped":      {"color": "#9ca3af", "bg": "rgba(156,163,175,0.15)", "label": "Omitido",   "icon": "⏭️"},
+    "unknown":      {"color": "#9ca3af", "bg": "rgba(156,163,175,0.15)", "label": "Desconocido", "icon": "❓"},
 }
 
 _CRITICALITY_CONFIG = {
-    "alta":    {"color": "#dc3545", "bg": "#f8d7da", "icon": "🔴"},
-    "media":   {"color": "#fd7e14", "bg": "#fff3cd", "icon": "🟡"},
-    "baja":    {"color": "#198754", "bg": "#d1e7dd", "icon": "🟢"},
-    "default": {"color": "#6c757d", "bg": "#e2e3e5", "icon": "⚪"},
+    "alta":    {"color": "#ef4444", "bg": "rgba(239,68,68,0.15)", "icon": "🔴"},
+    "media":   {"color": "#f59e0b", "bg": "rgba(245,158,11,0.15)", "icon": "🟡"},
+    "baja":    {"color": "#22c55e", "bg": "rgba(34,197,94,0.15)", "icon": "🟢"},
+    "default": {"color": "#9ca3af", "bg": "rgba(156,163,175,0.15)", "icon": "⚪"},
 }
 
 
@@ -58,7 +58,7 @@ def render_client_badge(client: dict) -> None:
         client: Dict con claves 'name', 'color' (hex), 'icon' (emoji opcional).
     """
     name = client.get("name", "Desconocido")
-    color = client.get("color", "#4a1a8a")
+    color = client.get("color", "#374151")
     icon = client.get("icon", "🏢")
     bg = _lighten_color(color, 0.75)
 
@@ -77,10 +77,10 @@ def render_health_indicator(health: dict) -> None:
     detail = health.get("detail", "")
 
     cfg = {
-        "healthy":   {"color": "#198754", "bg": "#d1e7dd", "icon": "✅", "label": "Saludable"},
-        "unhealthy": {"color": "#dc3545", "bg": "#f8d7da", "icon": "❌", "label": "No saludable"},
-        "unknown":   {"color": "#6c757d", "bg": "#e2e3e5", "icon": "❓", "label": "Desconocido"},
-    }.get(status, {"color": "#6c757d", "bg": "#e2e3e5", "icon": "❓", "label": "Desconocido"})
+        "healthy":   {"color": "#22c55e", "bg": "rgba(34,197,94,0.15)", "icon": "✅", "label": "Saludable"},
+        "unhealthy": {"color": "#ef4444", "bg": "rgba(239,68,68,0.15)", "icon": "❌", "label": "No saludable"},
+        "unknown":   {"color": "#9ca3af", "bg": "rgba(156,163,175,0.15)", "icon": "❓", "label": "Desconocido"},
+    }.get(status, {"color": "#9ca3af", "bg": "rgba(156,163,175,0.15)", "icon": "❓", "label": "Desconocido"})
 
     label = f'{cfg["label"]}'
     if detail:
@@ -106,7 +106,7 @@ def render_criticality_badge(criticality: str) -> None:
 def _lighten_color(hex_color: str, factor: float = 0.7) -> str:
     hex_color = hex_color.lstrip("#")
     if len(hex_color) != 6:
-        return "#e2e3e5"
+        return "#1E2632"
     r = int(hex_color[0:2], 16)
     g = int(hex_color[2:4], 16)
     b = int(hex_color[4:6], 16)

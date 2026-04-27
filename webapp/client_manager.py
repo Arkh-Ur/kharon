@@ -104,7 +104,7 @@ class ClientManager:
                     name=client_data.get('name', ''),
                     short_name=client_data.get('short_name', ''),
                     description=client_data.get('description', ''),
-                    color=client_data.get('color', '#4a1a8a'),
+                    color=client_data.get('color', '#374151'),
                     icon=client_data.get('icon', '🏢'),
                     contact_email=client_data.get('contact_email', ''),
                     contact_name=client_data.get('contact_name', ''),
