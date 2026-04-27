@@ -105,7 +105,7 @@ _KHARON_CSS = """
 
 def _init_session_state() -> None:
     defaults = {
-        "current_page": "Tablero",
+        "current_page": "📊 Tablero",
         "client_filter": "Todos",
     }
     for key, val in defaults.items():
@@ -617,7 +617,7 @@ def _page_health_by_client() -> None:
     st.title("❤️ Salud por Cliente")
 
     monitoring_data = []
-    monitoring_dir = getattr(Config, "MONITORING_DIR", None)
+    monitoring_dir = config.MONITORING_DIR
     if monitoring_dir:
         import pathlib
         mon_path = pathlib.Path(monitoring_dir)
