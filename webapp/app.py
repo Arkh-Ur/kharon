@@ -149,6 +149,17 @@ _KHARON_CSS = """
     header[data-testid="stHeader"] {
         display: none !important;
     }
+
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+        display: flex !important;
+        flex-direction: column !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] > div {
+        flex: 1 1 auto;
+    }
+    [data-testid="stSidebar"] .sidebar-footer {
+        margin-top: auto !important;
+    }
 </style>
 """
 
@@ -252,9 +263,9 @@ def _render_sidebar() -> None:
 
         st.divider()
         st.markdown(
-            f'<div style="text-align:center; padding: 4px 0;">'
+            f'<div class="sidebar-footer" style="text-align:center; padding: 4px 0;">'
             f'<img src="{_ARKHUR_LOGO_URI}" alt="Arkh-Ur" style="width:120px; margin:0 auto; display:block; opacity:0.7;" />'
-            f'<span style="font-size:0.6em; color:#545B67; letter-spacing:0.3px;">© 2025</span>'
+            f'<span style="font-size:0.6em; color:#545B67; letter-spacing:0.3px;">© {datetime.now().year}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
