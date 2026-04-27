@@ -1,8 +1,8 @@
 """
-Kharōn DAG - Sales Data Transformation
+Kharōn DAG - Analytics Pipeline
 
-This DAG executes the transform_sales script to transform and clean sales data
-from Client Beta for ETL processing.
+This DAG executes the analytics_pipeline script to run analytics for
+Client Gamma data in continuous mode.
 
 Author: Kharōn Orchestration Platform
 Version: 1.0
@@ -25,19 +25,19 @@ default_args = {
 
 # Create DAG instance
 dag = DAG(
-    dag_id='kharon_transform',
+    dag_id='kharon_analytics',
     default_args=default_args,
-    description='Transform and clean sales data from Client Beta',
-    schedule='0 7 * * *',  # Daily at 7 AM UTC
+    description='Run analytics pipeline for Client Gamma data in continuous mode',
+    schedule='@continuous',  # Continuous execution mode
     max_active_runs=1,
-    tags=['kharon-auto', 'client_beta', 'etl', 'transform', 'sales'],
+    tags=['kharon-auto', 'client_gamma', 'analytics', 'pipeline'],
     catchup=False,
 )
 
 # Create task using KharonOperator for script execution
-transform_sales_task = KharonOperator(
-    task_id='transform_sales',
-    script_path='/opt/kharon/scripts_externos/etl/transform_sales.py',
-    script_id='transform_sales',
+analytics_pipeline_task = KharonOperator(
+    task_id='analytics_pipeline',
+    script_path='/opt/kharon/scripts_externos/analytics/analytics_pipeline.py',
+    script_id='analytics_pipeline',
     dag=dag,
 )

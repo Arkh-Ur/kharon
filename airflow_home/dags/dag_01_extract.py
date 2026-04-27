@@ -30,7 +30,7 @@ dag = DAG(
     description='Extract data from Client Alpha source systems',
     schedule='0 6 * * *',  # Daily at 6 AM UTC
     max_active_runs=1,
-    tags=['kharon-auto', 'etl', 'extract', 'client_alpha'],
+    tags=['kharon-auto', 'client_alpha', 'etl', 'extract'],
     catchup=False,
 )
 

@@ -12,6 +12,7 @@ scripts:
     retries: 2
     schedule: "0 6 * * *"
     criticality: "high"
+    execution_mode: "scheduled"
     tags: ["etl", "extract", "client_alpha"]
     alert_on: ["failure", "timeout"]
     dependencies: []
@@ -28,6 +29,7 @@ scripts:
     retries: 2
     schedule: "0 7 * * *"
     criticality: "medium"
+    execution_mode: "scheduled"
     tags: ["etl", "transform", "sales", "client_beta"]
     alert_on: ["failure", "slow_execution"]
     dependencies: ["extract_client_alpha"]
@@ -44,6 +46,7 @@ scripts:
     retries: 3
     schedule: "0 8 * * *"
     criticality: "high"
+    execution_mode: "scheduled"
     tags: ["etl", "load", "warehouse", "client_alpha"]
     alert_on: ["failure", "timeout"]
     dependencies: ["transform_sales"]
@@ -60,6 +63,7 @@ scripts:
     retries: 1
     schedule: "0 2 * * 0"
     criticality: "low"
+    execution_mode: "scheduled"
     tags: ["maintenance", "cleanup", "client_gamma"]
     alert_on: ["failure"]
     dependencies: []
@@ -76,6 +80,7 @@ scripts:
     retries: 2
     schedule: "0 9 * * *"
     criticality: "medium"
+    execution_mode: "scheduled"
     tags: ["reports", "daily", "client_beta"]
     alert_on: ["failure", "slow_execution"]
     dependencies: []
@@ -92,6 +97,7 @@ scripts:
     retries: 2
     schedule: "0 */4 * * *"
     criticality: "high"
+    execution_mode: "continuous"
     tags: ["analytics", "pipeline", "client_gamma"]
     alert_on: ["failure", "timeout", "degraded_performance"]
     dependencies: []

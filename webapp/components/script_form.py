@@ -8,7 +8,7 @@ _STEPS = [
     "📋 Información Básica",
     "⚙️ Configuración del Script",
     "🏢 Asignación de Cliente",
-    "🕐 Programación y Tags",
+    "🕐 Modo de Ejecución",
     "✔️ Revisión",
 ]
 
@@ -224,12 +224,32 @@ def _step_client_assignment(clients: List[dict]) -> Optional[Dict]:
 
 
 def _step_schedule_tags() -> Optional[Dict]:
-    schedule = st.text_input(
-        "Expresión Cron",
-        value=st.session_state.form_data.get("schedule", "0 6 * * *"),
-        key="sf_schedule",
-        placeholder="0 6 * * * (todos los días a las 6:00)",
+    execution_mode = st.selectbox(
+        "Modo de ejecución *",
+        options=["on_demand", "continuous", "scheduled"],
+        format_func=lambda x: {
+            "on_demand": "🎯 Bajo Demanda — ejecución manual",
+            "continuous": "🔄 Continuo — se re-ejecuta al terminar",
+            "scheduled": "📅 Agendado — según horario cron",
+        }[x],
+        index=["on_demand", "continuous", "scheduled"].index(
+            st.session_state.form_data.get("execution_mode", "scheduled")
+        ),
+        key="sf_execution_mode",
     )
+
+    schedule = None
+    if execution_mode == "scheduled":
+        schedule = st.text_input(
+            "Expresión Cron",
+            value=st.session_state.form_data.get("schedule", "0 6 * * *"),
+            key="sf_schedule",
+            placeholder="0 6 * * * (todos los días a las 6:00)",
+        )
+    elif execution_mode == "continuous":
+        st.info("🔄 El script se re-ejecutará automáticamente al finalizar cada ejecución.")
+    else:
+        st.info("🎯 El script solo se ejecutará cuando lo actives manualmente desde el tablero.")
 
     tags_str = st.text_input(
         "Tags (separados por coma)",
@@ -239,7 +259,8 @@ def _step_schedule_tags() -> Optional[Dict]:
     )
 
     st.session_state.form_data.update({
-        "schedule": schedule,
+        "execution_mode": execution_mode,
+        "schedule": schedule if execution_mode == "scheduled" else None,
         "tags_str": tags_str,
         "tags": [t.strip() for t in tags_str.split(",") if t.strip()],
     })
@@ -263,7 +284,12 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
     with col2:
         st.markdown(f"**Ruta:** {fd.get('script_path', '—')}")
         st.markdown(f"**Cliente:** {fd.get('client', '—')}")
-        st.markdown(f"**Cron:** `{fd.get('schedule', '—')}`")
+        mode_display = {
+            "on_demand": "🎯 Bajo Demanda",
+            "continuous": "🔄 Continuo",
+            "scheduled": f"📅 Agendado (`{fd.get('schedule', '—')}`)",
+        }
+        st.markdown(f"**Modo:** {mode_display.get(fd.get('execution_mode', ''), '—')}")
         st.markdown(f"**Tags:** {', '.join(fd.get('tags', [])) or '—'}")
         st.markdown(f"**Timeout:** {fd.get('timeout', 3600)}s | **Reintentos:** {fd.get('retries', 2)}")
 

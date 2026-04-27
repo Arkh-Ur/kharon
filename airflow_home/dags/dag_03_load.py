@@ -1,8 +1,8 @@
 """
 Kharōn DAG - Data Warehouse Loading
 
-This DAG executes the load_warehouse script to load transformed data into the
-data warehouse for Client Alpha ETL operations.
+This DAG executes the load_warehouse script to load transformed data into
+the data warehouse for Client Alpha.
 
 Author: Kharōn Orchestration Platform
 Version: 1.0
@@ -27,11 +27,19 @@ default_args = {
 dag = DAG(
     dag_id='kharon_load',
     default_args=default_args,
-    description='Load transformed data into data warehouse',
+    description='Load transformed data into data warehouse for Client Alpha',
     schedule='0 8 * * *',  # Daily at 8 AM UTC
     max_active_runs=1,
-    tags=['kharon-auto', 'etl', 'load', 'warehouse', 'client_alpha'],
+    tags=['kharon-auto', 'client_alpha', 'etl', 'load', 'warehouse'],
     catchup=False,
+)
+
+# Create task using KharonOperator for script execution
+load_warehouse_task = KharonOperator(
+    task_id='load_warehouse',
+    script_path='/opt/kharon/scripts_externos/etl/load_warehouse.py',
+    script_id='load_warehouse',
+    dag=dag,
 )
 
 # Create task using KharonOperator for script execution

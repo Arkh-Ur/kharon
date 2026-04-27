@@ -1,8 +1,8 @@
 """
-Kharōn DAG - Sales Data Transformation
+Kharōn DAG - Log File Cleanup
 
-This DAG executes the transform_sales script to transform and clean sales data
-from Client Beta for ETL processing.
+This DAG executes the cleanup_logs script to clean up old log files and
+temporary files for Client Gamma.
 
 Author: Kharōn Orchestration Platform
 Version: 1.0
@@ -25,19 +25,19 @@ default_args = {
 
 # Create DAG instance
 dag = DAG(
-    dag_id='kharon_transform',
+    dag_id='kharon_cleanup',
     default_args=default_args,
-    description='Transform and clean sales data from Client Beta',
-    schedule='0 7 * * *',  # Daily at 7 AM UTC
+    description='Clean up old log files and temporary files for Client Gamma',
+    schedule='0 2 * * 0',  # Weekly at 2 AM UTC on Sunday
     max_active_runs=1,
-    tags=['kharon-auto', 'client_beta', 'etl', 'transform', 'sales'],
+    tags=['kharon-auto', 'client_gamma', 'maintenance', 'cleanup'],
     catchup=False,
 )
 
 # Create task using KharonOperator for script execution
-transform_sales_task = KharonOperator(
-    task_id='transform_sales',
-    script_path='/opt/kharon/scripts_externos/etl/transform_sales.py',
-    script_id='transform_sales',
+cleanup_logs_task = KharonOperator(
+    task_id='cleanup_logs',
+    script_path='/opt/kharon/scripts_externos/maintenance/cleanup_logs.sh',
+    script_id='cleanup_logs',
     dag=dag,
 )

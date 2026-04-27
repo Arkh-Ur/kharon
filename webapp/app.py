@@ -790,10 +790,25 @@ def _page_new_script() -> None:
         with st.spinner("Generando DAG..."):
             try:
                 generator = _get_dag_generator()
-                generator.generate(result)
-                st.balloons()
-                st.success(f"✅ Script **{result.get('name', '')}** creado exitosamente.")
-                st.info("El DAG se generará en el próximo ciclo de parsing de Airflow (~30s).")
+                gen_result = generator.generate_dag(
+                    script_id=result.get("name", "").replace(" ", "_").lower(),
+                    script_name=result.get("name", ""),
+                    script_path=result.get("script_path", ""),
+                    client_id=result.get("client", ""),
+                    timeout=result.get("timeout", 3600),
+                    retries=result.get("retries", 2),
+                    schedule=result.get("schedule"),
+                    criticality=result.get("criticality", "media"),
+                    tags=result.get("tags", []),
+                    python="python3" if result.get("interpreter") == "python" else "bash",
+                    execution_mode=result.get("execution_mode", "scheduled"),
+                )
+                if gen_result.success:
+                    st.balloons()
+                    st.success(f"✅ Script **{result.get('name', '')}** creado exitosamente.")
+                    st.info("El DAG se generará en el próximo ciclo de parsing de Airflow (~30s).")
+                else:
+                    st.error(f"Error: {', '.join(gen_result.errors)}")
             except Exception as e:
                 st.error(f"Error al generar el DAG: {e}")
 
