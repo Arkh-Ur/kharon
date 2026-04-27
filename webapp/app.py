@@ -7,7 +7,7 @@ import streamlit as st
 from airflow_client import AirflowClient, AirflowClientError
 from client_manager import ClientManager
 from dag_generator import DAGGenerator
-from config import config
+import config
 from components.dag_card import render_dag_card
 from components.log_viewer import render_log_viewer
 from components.script_form import render_script_form
@@ -617,7 +617,7 @@ def _page_health_by_client() -> None:
     st.title("❤️ Salud por Cliente")
 
     monitoring_data = []
-    monitoring_dir = getattr(config, "MONITORING_DIR", None)
+    monitoring_dir = getattr(Config, "MONITORING_DIR", None)
     if monitoring_dir:
         import pathlib
         mon_path = pathlib.Path(monitoring_dir)
@@ -731,7 +731,17 @@ def _page_configuration() -> None:
 
     with col_config:
         st.subheader("Configuración Actual")
-        env_info = config.get_environment_info()
+        env_info = {
+            "app_name": config.APP_NAME,
+            "company": config.COMPANY,
+            "airflow_url": config.AIRFLOW_BASE_URL,
+            "airflow_host": config.AIRFLOW_HOST,
+            "airflow_port": config.AIRFLOW_PORT,
+            "kharon_port": config.KHARON_PORT,
+            "project_root": str(config.PROJECT_ROOT),
+            "dags_dir": str(config.DAGS_DIR),
+            "external_scripts_dir": str(config.EXTERNAL_SCRIPTS_DIR),
+        }
         for key, val in env_info.items():
             st.markdown(f"**{key}:** `{val}`")
 

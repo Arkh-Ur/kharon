@@ -10,7 +10,7 @@ Version: 1.0
 
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.kharon_operator import KharonOperator
+from operators.kharon_operator import KharonOperator
 
 # Default arguments for all Kharōn DAGs
 default_args = {
@@ -28,7 +28,7 @@ dag = DAG(
     dag_id='kharon_extract',
     default_args=default_args,
     description='Extract data from Client Alpha source systems',
-    schedule_interval='0 6 * * *',  # Daily at 6 AM UTC
+    schedule='0 6 * * *',  # Daily at 6 AM UTC
     max_active_runs=1,
     tags=['kharon-auto', 'etl', 'extract', 'client_alpha'],
     catchup=False,
@@ -37,6 +37,7 @@ dag = DAG(
 # Create task using KharonOperator for script execution
 extract_client_alpha_task = KharonOperator(
     task_id='extract_client_alpha',
-    script_id='extract_client_alpha',  # Reference from scripts_registry.yaml
+    script_path='/opt/kharon/scripts_externos/etl/extract_alpha.py',
+    script_id='extract_client_alpha',
     dag=dag,
 )

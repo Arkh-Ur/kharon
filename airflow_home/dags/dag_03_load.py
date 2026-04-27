@@ -10,7 +10,7 @@ Version: 1.0
 
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.kharon_operator import KharonOperator
+from operators.kharon_operator import KharonOperator
 
 # Default arguments for all Kharōn DAGs
 default_args = {
@@ -28,7 +28,7 @@ dag = DAG(
     dag_id='kharon_load',
     default_args=default_args,
     description='Load transformed data into data warehouse',
-    schedule_interval='0 8 * * *',  # Daily at 8 AM UTC
+    schedule='0 8 * * *',  # Daily at 8 AM UTC
     max_active_runs=1,
     tags=['kharon-auto', 'etl', 'load', 'warehouse', 'client_alpha'],
     catchup=False,
@@ -37,6 +37,7 @@ dag = DAG(
 # Create task using KharonOperator for script execution
 load_warehouse_task = KharonOperator(
     task_id='load_warehouse',
-    script_id='load_warehouse',  # Reference from scripts_registry.yaml
+    script_path='/opt/kharon/scripts_externos/etl/load_warehouse.py',
+    script_id='load_warehouse',
     dag=dag,
 )

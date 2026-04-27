@@ -10,7 +10,7 @@ Version: 1.0
 
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.kharon_operator import KharonOperator
+from operators.kharon_operator import KharonOperator
 
 # Default arguments for all Kharōn DAGs
 default_args = {
@@ -28,7 +28,7 @@ dag = DAG(
     dag_id='kharon_shell_maintenance',
     default_args=default_args,
     description='Execute shell script maintenance tasks for Client Gamma',
-    schedule_interval='0 2 * * 0',  # Weekly on Sunday at 2 AM UTC
+    schedule='0 2 * * 0',  # Weekly on Sunday at 2 AM UTC
     max_active_runs=1,
     tags=['kharon-auto', 'maintenance', 'shell', 'cleanup', 'client_gamma'],
     catchup=False,
@@ -37,6 +37,7 @@ dag = DAG(
 # Create task using KharonOperator for shell script execution
 cleanup_logs_task = KharonOperator(
     task_id='cleanup_logs',
-    script_id='cleanup_logs',  # Reference from scripts_registry.yaml (shell script)
+    script_path='/opt/kharon/scripts_externos/maintenance/cleanup_logs.sh',
+    script_id='cleanup_logs',
     dag=dag,
 )

@@ -95,23 +95,12 @@ check_prerequisites() {
 init_airflow() {
     log_info "Initializing Airflow..."
     
-    # Create directories
     mkdir -p "$AIRFLOW_HOME/dags"
     mkdir -p "$AIRFLOW_HOME/logs"
     mkdir -p "$AIRFLOW_HOME/logs/kharon_monitoring"
+    mkdir -p "$AIRFLOW_HOME/data"
     
-    # Initialize database
-    airflow db migrate 2>/dev/null || log_warn "Airflow DB migration already done or failed"
-    
-    # Create admin user if not exists
-    airflow users create \
-        --username "$KHARON_AIRFLOW_USER" \
-        --password "$KHARON_AIRFLOW_PASSWORD" \
-        --firstname Admin \
-        --lastname ArkhUr \
-        --role Admin \
-        --email admin@arkh-ur.com \
-        2>/dev/null || log_warn "Admin user already exists"
+    airflow db migrate 2>&1 | tail -1 || log_warn "Airflow DB migration issue"
     
     log_info "Airflow initialized"
 }

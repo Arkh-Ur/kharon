@@ -10,7 +10,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from requests.exceptions import RequestException
 
-from .config import config
+import config
 
 
 class AirflowClientError(Exception):

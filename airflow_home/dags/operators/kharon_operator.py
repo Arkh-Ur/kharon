@@ -9,14 +9,12 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from airflow.models.baseoperator import BaseOperator
-from airflow.models.xcom import XCOM_RETURN_KEY
-from airflow.utils.decorators import apply_defaults
+from airflow.sdk.bases.operator import BaseOperator
 
-from ..utils.constants import DEFAULT_TIMEOUT_SECONDS, DEFAULT_RETRIES
-from ..utils.script_runner import ScriptRunner
-from ..utils.script_monitor import ScriptMonitor
-from ..utils.logger import get_task_logger
+from utils.constants import DEFAULT_TIMEOUT_SECONDS, DEFAULT_RETRIES
+from utils.script_runner import ScriptRunner
+from utils.script_monitor import ScriptMonitor
+from utils.logger import get_task_logger
 
 logger = get_task_logger(__name__)
 
@@ -32,7 +30,6 @@ class KharonOperator(BaseOperator):
     
     template_fields = ('script_path', 'args', 'env_vars')
     
-    @apply_defaults
     def __init__(
         self,
         script_path: str,
@@ -175,7 +172,7 @@ class KharonOperator(BaseOperator):
                 f"({result.duration_seconds:.2f}s, exit_code={result.exit_code}): {error_msg}"
             )
             
-            context['ti'].xcom_push(key=XCOM_RETURN_KEY, value=xcom_data)
+            context['ti'].xcom_push(key='return_value', value=xcom_data)
             raise RuntimeError(f"Script execution failed: {error_msg}")
             
         except Exception as e:

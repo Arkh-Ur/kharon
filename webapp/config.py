@@ -1,89 +1,43 @@
-"""
-Configuration module for Kharōn webapp.
-
-Manages environment variables, application configuration, and path management.
-"""
-
 import os
 from pathlib import Path
-from typing import Dict, Any
+
+_WEBAPP_DIR = Path(__file__).parent
+PROJECT_ROOT = _WEBAPP_DIR.parent
+
+AIRFLOW_HOST = os.getenv("KHARON_AIRFLOW_HOST", "localhost")
+AIRFLOW_PORT = int(os.getenv("KHARON_AIRFLOW_PORT", "8080"))
+AIRFLOW_USER = os.getenv("KHARON_AIRFLOW_USER", "admin")
+AIRFLOW_PASSWORD = os.getenv("KHARON_AIRFLOW_PASSWORD", "admin")
+AIRFLOW_BASE_URL = f"http://{AIRFLOW_HOST}:{AIRFLOW_PORT}"
+
+KHARON_PORT = int(os.getenv("KHARON_PORT", "8501"))
+
+AIRFLOW_HOME = Path(os.getenv("AIRFLOW_HOME", str(PROJECT_ROOT / "airflow_home")))
+DAGS_DIR = AIRFLOW_HOME / "dags"
+CONFIG_DIR = DAGS_DIR / "config"
+SCRIPTS_REGISTRY_PATH = CONFIG_DIR / "scripts_registry.yaml"
+CLIENTS_REGISTRY_PATH = CONFIG_DIR / "clients_registry.yaml"
+MONITORING_DIR = AIRFLOW_HOME / "logs" / "kharon_monitoring"
+EXTERNAL_SCRIPTS_DIR = AIRFLOW_HOME / "scripts_externos"
+
+APP_NAME = "Kharōn"
+COMPANY = "Arkh-Ur"
+PRIMARY_COLOR = "#4a1a8a"
+SECONDARY_COLOR = "#0d6efd"
+SUCCESS_COLOR = "#198754"
+WARNING_COLOR = "#fd7e14"
+DANGER_COLOR = "#dc3545"
 
 
-class Config:
-    """Configuration class for Kharōn application."""
-    
-    # Airflow configuration
-    AIRFLOW_HOST: str = os.getenv("KHARON_AIRFLOW_HOST", "localhost")
-    AIRFLOW_PORT: int = int(os.getenv("KHARON_AIRFLOW_PORT", "8080"))
-    AIRFLOW_USER: str = os.getenv("KHARON_AIRFLOW_USER", "admin")
-    AIRFLOW_PASSWORD: str = os.getenv("KHARON_AIRFLOW_PASSWORD", "admin")
-    
-    @property
-    def AIRFLOW_BASE_URL(self) -> str:
-        """Construct Airflow base URL from host and port."""
-        return f"http://{self.AIRFLOW_HOST}:{self.AIRFLOW_PORT}"
-    
-    # Kharōn webapp configuration
-    KHARON_PORT: int = int(os.getenv("KHARON_PORT", "8501"))
-    
-    # Path configuration
-    PROJECT_ROOT: Path = Path(__file__).parent.parent.parent
-    AIRFLOW_HOME: Path = Path(os.getenv("AIRFLOW_HOME", str(PROJECT_ROOT / "airflow_home")))
-    DAGS_DIR: Path = AIRFLOW_HOME / "dags"
-    CONFIG_DIR: Path = DAGS_DIR / "config"
-    SCRIPTS_REGISTRY_PATH: Path = CONFIG_DIR / "scripts_registry.yaml"
-    CLIENTS_REGISTRY_PATH: Path = CONFIG_DIR / "clients_registry.yaml"
-    MONITORING_DIR: Path = AIRFLOW_HOME / "data" / "monitoring"
-    EXTERNAL_SCRIPTS_DIR: Path = PROJECT_ROOT / "airflow_home" / "scripts_externos"
-    
-    # Branding
-    APP_NAME: str = "Kharōn"
-    COMPANY: str = "Arkh-Ur"
-    PRIMARY_COLOR: str = "#4a1a8a"
-    
-    def get_kharon_home(self) -> Path:
-        """Get the Kharōn home directory path."""
-        return Path(__file__).parent.parent
-    
-    def validate_directories(self) -> None:
-        """Validate that required directories exist."""
-        required_dirs = [
-            self.AIRFLOW_HOME,
-            self.DAGS_DIR,
-            self.CONFIG_DIR,
-            self.MONITORING_DIR,
-            self.EXTERNAL_SCRIPTS_DIR,
-            self.CONFIG_DIR.parent,  # Ensure utils directory exists
-            self.DAGS_DIR / "operators",
-            self.DAGS_DIR / "scripts",
-            self.DAGS_DIR / "utils",
-        ]
-        
-        for directory in required_dirs:
-            directory.mkdir(parents=True, exist_ok=True)
-    
-    def get_environment_info(self) -> Dict[str, Any]:
-        """Get environment configuration information."""
-        return {
-            "app_name": self.APP_NAME,
-            "company": self.COMPANY,
-            "primary_color": self.PRIMARY_COLOR,
-            "airflow_base_url": self.AIRFLOW_BASE_URL,
-            "airflow_host": self.AIRFLOW_HOST,
-            "airflow_port": self.AIRFLOW_PORT,
-            "airflow_user": self.AIRFLOW_USER,
-            "kharon_port": self.KHARON_PORT,
-            "project_root": str(self.PROJECT_ROOT),
-            "airflow_home": str(self.AIRFLOW_HOME),
-            "dags_dir": str(self.DAGS_DIR),
-            "config_dir": str(self.CONFIG_DIR),
-            "monitoring_dir": str(self.MONITORING_DIR),
-            "external_scripts_dir": str(self.EXTERNAL_SCRIPTS_DIR),
-        }
+def get_kharon_home() -> Path:
+    return PROJECT_ROOT
 
 
-# Global configuration instance
-config = Config()
+def ensure_directories():
+    for d in [AIRFLOW_HOME, DAGS_DIR, CONFIG_DIR, MONITORING_DIR,
+              EXTERNAL_SCRIPTS_DIR, DAGS_DIR / "operators",
+              DAGS_DIR / "utils", DAGS_DIR / "scripts"]:
+        d.mkdir(parents=True, exist_ok=True)
 
-# Ensure required directories exist on import
-config.validate_directories()
+
+ensure_directories()

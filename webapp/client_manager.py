@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from copy import deepcopy
 
-from .config import config
+import config
 
 
 @dataclass
@@ -90,8 +90,15 @@ class ClientManager:
             data = self._load_yaml()
             self._clients = {}
             
-            for client_id, client_data in data.items():
-                # Convert dict to Client object
+            clients_list = data.get('clients', []) if isinstance(data, dict) else []
+            self._clients = {}
+            
+            for client_data in clients_list:
+                if not isinstance(client_data, dict):
+                    continue
+                client_id = client_data.get('id', '')
+                if not client_id:
+                    continue
                 client_obj = Client(
                     id=client_id,
                     name=client_data.get('name', ''),

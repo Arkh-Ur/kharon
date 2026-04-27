@@ -10,7 +10,7 @@ Version: 1.0
 
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.kharon_operator import KharonOperator
+from operators.kharon_operator import KharonOperator
 
 # Default arguments for all Kharōn DAGs
 default_args = {
@@ -28,7 +28,7 @@ dag = DAG(
     dag_id='kharon_transform',
     default_args=default_args,
     description='Transform and clean sales data from Client Beta',
-    schedule_interval='0 7 * * *',  # Daily at 7 AM UTC
+    schedule='0 7 * * *',  # Daily at 7 AM UTC
     max_active_runs=1,
     tags=['kharon-auto', 'etl', 'transform', 'sales', 'client_beta'],
     catchup=False,
@@ -37,6 +37,7 @@ dag = DAG(
 # Create task using KharonOperator for script execution
 transform_sales_task = KharonOperator(
     task_id='transform_sales',
-    script_id='transform_sales',  # Reference from scripts_registry.yaml
+    script_path='/opt/kharon/scripts_externos/etl/transform_sales.py',
+    script_id='transform_sales',
     dag=dag,
 )

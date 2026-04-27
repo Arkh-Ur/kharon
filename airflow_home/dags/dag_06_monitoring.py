@@ -16,9 +16,7 @@ Version: 1.0
 
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.providers.postgres.operators.postgres import PostgresOperator
-from airflow.providers.postgres.operators.postgres import PostgresExecuteOperator
+from airflow.providers.standard.operators.python import PythonOperator
 
 # Default arguments for all Kharōn DAGs
 default_args = {
@@ -36,7 +34,7 @@ dag = DAG(
     dag_id='kharon_health_monitor',
     default_args=default_args,
     description='Monitor health and status of all Kharōn scripts',
-    schedule_interval='0 */6 * * *',  # Every 6 hours
+    schedule='0 */6 * * *',  # Every 6 hours
     max_active_runs=1,
     tags=['kharon-auto', 'monitoring', 'health', 'system'],
     catchup=False,
