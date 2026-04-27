@@ -1,0 +1,99 @@
+# Scripts Registry for Kharōn Orchestration Platform
+# This registry defines all available scripts for execution through Kharōn
+
+scripts:
+  - id: "extract_client_alpha"
+    name: "Extract Client Alpha Data"
+    description: "Extract data from Client Alpha source systems"
+    client_id: "client_alpha"
+    script_path: "${EXTERNAL_SCRIPTS_DIR}/etl/extract_alpha.py"
+    python: true
+    timeout_seconds: 1800
+    retries: 2
+    schedule: "0 6 * * *"
+    criticality: "high"
+    tags: ["etl", "extract", "client_alpha"]
+    alert_on: ["failure", "timeout"]
+    dependencies: []
+    expected_duration_seconds: 1200
+    auto_generated: false
+
+  - id: "transform_sales"
+    name: "Transform Sales Data"
+    description: "Transform and clean sales data from Client Beta"
+    client_id: "client_beta"
+    script_path: "${EXTERNAL_SCRIPTS_DIR}/etl/transform_sales.py"
+    python: true
+    timeout_seconds: 1200
+    retries: 2
+    schedule: "0 7 * * *"
+    criticality: "medium"
+    tags: ["etl", "transform", "sales", "client_beta"]
+    alert_on: ["failure", "slow_execution"]
+    dependencies: ["extract_client_alpha"]
+    expected_duration_seconds: 900
+    auto_generated: false
+
+  - id: "load_warehouse"
+    name: "Load Data Warehouse"
+    description: "Load transformed data into data warehouse"
+    client_id: "client_alpha"
+    script_path: "${EXTERNAL_SCRIPTS_DIR}/etl/load_warehouse.py"
+    python: true
+    timeout_seconds: 2400
+    retries: 3
+    schedule: "0 8 * * *"
+    criticality: "high"
+    tags: ["etl", "load", "warehouse", "client_alpha"]
+    alert_on: ["failure", "timeout"]
+    dependencies: ["transform_sales"]
+    expected_duration_seconds: 1800
+    auto_generated: false
+
+  - id: "cleanup_logs"
+    name: "Cleanup Log Files"
+    description: "Clean up old log files and temporary files"
+    client_id: "client_gamma"
+    script_path: "${EXTERNAL_SCRIPTS_DIR}/maintenance/cleanup_logs.sh"
+    python: false
+    timeout_seconds: 600
+    retries: 1
+    schedule: "0 2 * * 0"
+    criticality: "low"
+    tags: ["maintenance", "cleanup", "client_gamma"]
+    alert_on: ["failure"]
+    dependencies: []
+    expected_duration_seconds: 300
+    auto_generated: false
+
+  - id: "generate_daily_report"
+    name: "Generate Daily Report"
+    description: "Generate daily business reports for Client Beta"
+    client_id: "client_beta"
+    script_path: "${EXTERNAL_SCRIPTS_DIR}/reports/daily_report.py"
+    python: true
+    timeout_seconds: 900
+    retries: 2
+    schedule: "0 9 * * *"
+    criticality: "medium"
+    tags: ["reports", "daily", "client_beta"]
+    alert_on: ["failure", "slow_execution"]
+    dependencies: []
+    expected_duration_seconds: 600
+    auto_generated: false
+
+  - id: "analytics_pipeline"
+    name: "Analytics Pipeline"
+    description: "Run analytics pipeline for Client Gamma data"
+    client_id: "client_gamma"
+    script_path: "${EXTERNAL_SCRIPTS_DIR}/analytics/analytics_pipeline.py"
+    python: true
+    timeout_seconds: 3600
+    retries: 2
+    schedule: "0 */4 * * *"
+    criticality: "high"
+    tags: ["analytics", "pipeline", "client_gamma"]
+    alert_on: ["failure", "timeout", "degraded_performance"]
+    dependencies: []
+    expected_duration_seconds: 2700
+    auto_generated: false

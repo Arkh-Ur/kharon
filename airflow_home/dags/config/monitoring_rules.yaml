@@ -1,0 +1,53 @@
+# Monitoring Rules for Kharōn Orchestration Platform
+# This registry defines monitoring and alerting rules for script execution
+
+monitoring_rules:
+  - rule_id: "failure"
+    name: "Script Failure"
+    description: "Alert when a script execution fails"
+    alert_type: "failure"
+    condition: "execution_failed"
+    threshold: 1
+    severity: "critical"
+    enabled: true
+    message_template: "⚠️ Script '{{ script_name }}' (client: '{{ client_name }}') has failed to execute. Please check logs for details."
+
+  - rule_id: "timeout"
+    name: "Script Timeout"
+    description: "Alert when a script execution times out"
+    alert_type: "timeout"
+    condition: "execution_timeout"
+    threshold: 1
+    severity: "warning"
+    enabled: true
+    message_template: "⏰ Script '{{ script_name }}' (client: '{{ client_name }}') has exceeded timeout threshold of {{ timeout_seconds }} seconds."
+
+  - rule_id: "slow_execution"
+    name: "Slow Execution"
+    description: "Alert when script execution takes significantly longer than expected"
+    alert_type: "slow_execution"
+    condition: "execution_duration"
+    threshold: 1.5
+    severity: "info"
+    enabled: true
+    message_template: "🐌 Script '{{ script_name }}' (client: '{{ client_name }}') is running slow. Duration: {{ actual_duration }}s, Expected: {{ expected_duration }}s, Ratio: {{ ratio }}x"
+
+  - rule_id: "consecutive_failures"
+    name: "Consecutive Failures"
+    description: "Alert when multiple consecutive failures occur for a script"
+    alert_type: "consecutive_failures"
+    condition: "consecutive_failures"
+    threshold: 3
+    severity: "critical"
+    enabled: true
+    message_template: "🔥 Script '{{ script_name }}' (client: '{{ client_name }}') has failed {{ failure_count }} times consecutively. Immediate attention required."
+
+  - rule_id: "degraded_performance"
+    name: "Degraded Performance"
+    description: "Alert when script performance degrades significantly"
+    alert_type: "degraded_performance"
+    condition: "performance_degradation"
+    threshold: 0.8
+    severity: "warning"
+    enabled: true
+    message_template: "📉 Performance degradation detected for script '{{ script_name }}' (client: '{{ client_name }}'). Current performance: {{ current_performance }}, Threshold: {{ threshold }}"

@@ -1,0 +1,425 @@
+"""
+DAG file generator for Kharōn webapp.
+
+Generates Airflow DAG files from script metadata and manages script registry.
+"""
+
+import re
+import yaml
+from pathlib import Path
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+
+from .config import config
+
+
+@dataclass
+class DAGGenerationResult:
+    """Result of DAG generation operation."""
+    success: bool
+    dag_id: Optional[str] = None
+    file_path: Optional[str] = None
+    errors: List[str] = None
+    
+    def __post_init__(self):
+        """Initialize empty list for errors."""
+        if self.errors is None:
+            self.errors = []
+
+
+class DAGGenerator:
+    """DAG file generator with validation and registry management."""
+    
+    def __init__(self, dags_dir: Optional[Path] = None, registry_path: Optional[Path] = None):
+        """Initialize DAGGenerator.
+        
+        Args:
+            dags_dir: Directory for DAG files. If None, uses config.DAGS_DIR
+            registry_path: Path for scripts registry. If None, uses config.SCRIPTS_REGISTRY_PATH
+        """
+        self.dags_dir = dags_dir or config.DAGS_DIR
+        self.registry_path = registry_path or config.SCRIPTS_REGISTRY_PATH
+        
+        # Ensure directories exist
+        self.dags_dir.mkdir(parents=True, exist_ok=True)
+        self.registry_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    def generate_dag(
+        self,
+        script_id: str,
+        script_name: str,
+        script_path: str,
+        client_id: str,
+        timeout: int = 3600,
+        retries: int = 2,
+        schedule: Optional[str] = None,
+        criticality: str = "medium",
+        tags: Optional[List[str]] = None,
+        python: str = "python3"
+    ) -> DAGGenerationResult:
+        """Generate a DAG file from script metadata.
+        
+        Args:
+            script_id: Unique script identifier
+            script_name: Human-readable script name
+            script_path: Path to the script file
+            client_id: Associated client identifier
+            timeout: Task timeout in seconds
+            retries: Number of retry attempts
+            schedule: Optional schedule string
+            criticality: Criticality level (low, medium, high)
+            tags: Optional list of tags
+            python: Python executable path
+            
+        Returns:
+            DAGGenerationResult with operation status
+            
+        Raises:
+            ValueError: If validation fails
+            IOError: If file operations fail
+        """
+        result = DAGGenerationResult(success=False)
+        
+        try:
+            # Validate script ID
+            validation_error = self._validate_script_id(script_id)
+            if validation_error:
+                result.errors.append(f"Script ID validation failed: {validation_error}")
+                return result
+            
+            # Sanitize script ID
+            sanitized_script_id = self._sanitize_script_id(script_id)
+            
+            # Validate script exists
+            script_file = Path(script_path)
+            if not script_file.exists():
+                result.errors.append(f"Script file not found: {script_path}")
+                return result
+            
+            # Check if script has valid extension
+            if not script_file.suffix.lower() in ['.py', '.sh', '.bash']:
+                result.errors.append(f"Unsupported script extension: {script_file.suffix}")
+                return result
+            
+            # Generate DAG content
+            dag_content = self._generate_dag_content(
+                sanitized_script_id,
+                script_name,
+                script_file,
+                client_id,
+                timeout,
+                retries,
+                schedule,
+                criticality,
+                tags,
+                python
+            )
+            
+            # Write DAG file
+            dag_file_path = self.dags_dir / f"kharon_{sanitized_script_id}.py"
+            with open(dag_file_path, 'w', encoding='utf-8') as f:
+                f.write(dag_content)
+            
+            registry_entry = {
+                "script_id": sanitized_script_id,
+                "script_name": script_name,
+                "script_path": str(script_file),
+                "client_id": client_id,
+                "timeout": timeout,
+                "retries": retries,
+                "schedule": schedule,
+                "criticality": criticality,
+                "tags": tags or [],
+                "python": python,
+                "created_at": yaml.safe_dump({"timestamp": "now"})
+            }
+            self._update_registry(registry_entry)
+            
+            result.success = True
+            result.dag_id = sanitized_script_id
+            result.file_path = str(dag_file_path)
+            
+            return result
+            
+        except Exception as e:
+            result.errors.append(f"Unexpected error: {str(e)}")
+            return result
+    
+    def delete_dag(self, script_id: str) -> bool:
+        """Delete a DAG file and remove from registry.
+        
+        Args:
+            script_id: The script identifier
+            
+        Returns:
+            True if deletion was successful, False otherwise
+            
+        Raises:
+            ValueError: If script ID validation fails
+            IOError: If file operations fail
+"""
+        try:
+            validation_error = self._validate_script_id(script_id)
+            if validation_error:
+                raise ValueError(f"Script ID validation failed: {validation_error}")
+            
+            dag_file = self.dags_dir / f"kharon_{sanitized_script_id}.py"
+            if dag_file.exists():
+                dag_file.unlink()
+            
+            self._remove_from_registry(sanitized_script_id)
+            
+            return True
+            
+        except Exception:
+            return False
+    
+    def _generate_dag_content(
+        self,
+        dag_id: str,
+        script_name: str,
+        script_file: Path,
+        client_id: str,
+        timeout: int,
+        retries: int,
+        schedule: Optional[str],
+        criticality: str,
+        tags: Optional[List[str]],
+        python: str
+    ) -> str:
+        """Generate complete DAG file content.
+        
+        Args:
+            dag_id: DAG identifier
+            script_name: Human-readable script name
+            script_file: Path to script file
+            client_id: Associated client identifier
+            timeout: Task timeout in seconds
+            retries: Number of retry attempts
+            schedule: Optional schedule string
+            criticality: Criticality level
+            tags: Optional list of tags
+            python: Python executable path
+            
+        Returns:
+            Complete DAG file content as string
+        """
+        # Generate default_args based on criticality
+        priority_map = {
+            "low": {"priority_weight": 1, "retry_delay": "minutes: 5"},
+            "medium": {"priority_weight": 5, "retry_delay": "minutes: 2"},
+            "high": {"priority_weight": 10, "retry_delay": "minutes: 1"}
+        }
+        
+        priority_config = priority_map.get(criticality, priority_map["medium"])
+        
+        default_args = {
+            "owner": "airflow",
+            "depends_on_past": False,
+            "start_date": "datetime(2024, 1, 1)",
+            "email": ["admin@example.com"],
+            "email_on_failure": True,
+            "email_on_retry": False,
+            "retries": retries,
+            "retry_delay": priority_config["retry_delay"],
+            "priority_weight": priority_config["priority_weight"],
+            "catchup": False,
+        }
+        
+        # Build task configuration
+        task_config = {
+            "task_id": f"execute_{dag_id}",
+            "bash_command": f"cd {script_file.parent} && {python} {script_file.name}",
+            "timeout": timeout,
+        }
+        
+        # Build DAG tags
+        dag_tags = ["kharon", client_id]
+        if tags:
+            dag_tags.extend(tags)
+        
+        # Generate DAG content
+        dag_content = f'''"""
+Generated DAG for {script_name}
+Script ID: {dag_id}
+Client: {client_id}
+Generated by Kharōn
+
+Do not modify this file directly. Changes will be overwritten.
+"""
+
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+
+# DAG configuration
+default_args = {default_args}
+
+# Create DAG
+dag = DAG(
+    "{dag_id}",
+    default_args=default_args,
+    description="{script_name}",
+    schedule="{schedule or "None"}",
+    tags={dag_tags},
+    catchup=False,
+    max_active_runs=1,
+)
+
+# Create task
+{dag_id}_task = BashOperator(
+    task_id="{task_config["task_id"]}",
+    bash_command={task_config["bash_command"]!r},
+    timeout={task_config["timeout"]},
+    dag=dag,
+)
+
+# Add task to DAG
+{dag_id}_task
+'''
+        
+        return dag_content.strip()
+    
+    def _update_registry(self, entry: Dict) -> None:
+        """Update scripts registry with new entry.
+        
+        Args:
+            entry: Registry entry to add
+            
+        Raises:
+            IOError: If file operations fail
+        """
+        try:
+            # Load existing registry
+            registry_data = self._load_registry()
+            
+            # Add/update entry
+            registry_data[entry["script_id"]] = entry
+            
+            # Save registry
+            self._save_registry(registry_data)
+            
+        except Exception as e:
+            raise IOError(f"Failed to update registry: {e}") from e
+    
+    def _remove_from_registry(self, script_id: str) -> None:
+        """Remove entry from scripts registry.
+        
+        Args:
+            script_id: Script identifier to remove
+            
+        Raises:
+            IOError: If file operations fail
+        """
+        try:
+            registry_data = self._load_registry()
+            
+            if script_id in registry_data:
+                del registry_data[script_id]
+                
+                self._save_registry(registry_data)
+                
+        except Exception as e:
+            raise IOError(f"Failed to remove from registry: {e}") from e
+    
+    def _load_registry(self) -> Dict:
+        """Load scripts registry from file.
+        
+        Returns:
+            Registry data as dict
+            
+        Raises:
+            IOError: If file operations fail
+            yaml.YAMLError: If YAML parsing fails
+        """
+        try:
+            if self.registry_path.exists():
+                with open(self.registry_path, 'r', encoding='utf-8') as f:
+                    return yaml.safe_load(f) or {}
+            return {}
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in registry: {e}") from e
+        except IOError as e:
+            raise IOError(f"Failed to load registry: {e}") from e
+    
+    def _save_registry(self, data: Dict) -> None:
+        """Save scripts registry to file.
+        
+        Args:
+            data: Registry data to save
+            
+        Raises:
+            IOError: If file operations fail
+        """
+        try:
+            with open(self.registry_path, 'w', encoding='utf-8') as f:
+                yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+        except IOError as e:
+            raise IOError(f"Failed to save registry: {e}") from e
+    
+    def _validate_script_id(self, script_id: str) -> Optional[str]:
+        """Validate script identifier.
+        
+        Args:
+            script_id: Script identifier to validate
+            
+        Returns:
+            Error message if validation fails, None if valid
+        """
+        if not script_id:
+            return "Script ID cannot be empty"
+        
+        if len(script_id) > 100:
+            return "Script ID cannot exceed 100 characters"
+        
+        # Check for reserved words
+        reserved_words = ['airflow', 'dag', 'task', 'kharon', 'operator', 'sensor']
+        if script_id.lower() in reserved_words:
+            return f"Script ID cannot be reserved word: {script_id}"
+        
+        return None
+    
+    def _sanitize_script_id(self, script_id: str) -> str:
+        """Sanitize script identifier for DAG naming.
+        
+        Args:
+            script_id: Original script identifier
+            
+        Returns:
+            Sanitized script identifier
+        """
+        sanitized = script_id.lower()
+        
+        sanitized = re.sub(r'[^a-z0-9_]', '_', sanitized)
+        
+        sanitized = re.sub(r'_+', '_', sanitized)
+        
+        sanitized = sanitized.strip('_')
+        
+        if sanitized and not sanitized[0].isalpha():
+            sanitized = 'script_' + sanitized
+        
+        return sanitized
+    
+    def get_registry_status(self) -> Dict[str, Any]:
+        """Get registry status information.
+        
+        Returns:
+            Dict with registry status information
+        """
+        try:
+            registry_data = self._load_registry()
+            return {
+                "registry_exists": self.registry_path.exists(),
+                "registry_path": str(self.registry_path),
+                "total_scripts": len(registry_data),
+                "dags_directory": str(self.dags_dir),
+                "dags_directory_exists": self.dags_dir.exists(),
+                "generated_dags": len([f for f in self.dags_dir.glob("kharon_*.py")]),
+            }
+        except Exception as e:
+            return {
+                "error": str(e),
+                "registry_path": str(self.registry_path),
+                "dags_directory": str(self.dags_dir),
+            }
