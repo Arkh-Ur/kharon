@@ -1,5 +1,7 @@
 import json
+import base64
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List
 
 import streamlit as st
@@ -17,6 +19,19 @@ from components.status_badge import (
     render_health_indicator,
     render_status_badge,
 )
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _svg_to_data_uri(filename: str) -> str:
+    svg_path = _STATIC_DIR / filename
+    svg_bytes = svg_path.read_bytes()
+    encoded = base64.b64encode(svg_bytes).decode("utf-8")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+_KHARON_LOGO_URI = _svg_to_data_uri("kharon-logo-text.svg")
+_ARKHUR_LOGO_URI = _svg_to_data_uri("arkh-ur-logo-text.svg")
 
 
 # ─── Custom CSS ────────────────────────────────────────────────────────────────
@@ -204,11 +219,12 @@ _PAGE_MAP = {p: p for p in _PAGES}
 def _render_sidebar() -> None:
     with st.sidebar:
         st.markdown(
-            '<div style="text-align:center; padding: 16px 0;">'
-            '<span style="font-size:2em;">⚓</span><br/>'
-            '<span style="font-size:1.4em; font-weight:800; color:#e5e7eb;">Kharōn</span><br/>'
-            '<span style="font-size:0.75em; color:#9ca3af;">Arkh-Ur — Data Engineering</span>'
-            '</div>',
+            f'<div style="text-align:center; padding: 8px 0 4px 0;">'
+            f'<img src="{_KHARON_LOGO_URI}" alt="Kharōn" style="width:180px; margin:0 auto; display:block;" />'
+            f'</div>'
+            f'<div style="text-align:center; padding: 0 0 8px 0;">'
+            f'<span style="font-size:0.7em; color:#9ca3af; letter-spacing:0.5px;">Data Engineering Division</span>'
+            f'</div>',
             unsafe_allow_html=True,
         )
         st.divider()
@@ -232,7 +248,13 @@ def _render_sidebar() -> None:
         )
 
         st.divider()
-        st.caption("Kharōn v1.0 — Arkh-Ur © 2025")
+        st.markdown(
+            f'<div style="text-align:center; padding: 4px 0;">'
+            f'<img src="{_ARKHUR_LOGO_URI}" alt="Arkh-Ur" style="width:120px; margin:0 auto; display:block; opacity:0.7;" />'
+            f'<span style="font-size:0.6em; color:#545B67; letter-spacing:0.3px;">© 2025</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
 
 # ─── Page 1: Tablero ──────────────────────────────────────────────────────────
