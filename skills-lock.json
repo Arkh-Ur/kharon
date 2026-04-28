@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "063a0e6448123cd359ad0044cc46b0e490cc7964d45ef4bb9fd842bd2ffbca67"
+    },
+    "huashu-design": {
+      "source": "alchaincyf/huashu-design",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "7da122ba981cb59e6d2cdd82bc682344c9dd16ee7c065e22c7757e677a5ee14e"
+    },
+    "shadcn": {
+      "source": "lumacoder/shadcn-ui-skills",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "b379f90887968bc1d14291c1ee2c56c11edc6b48ccfef0f53f563d86807fcb2f"
+    },
+    "web-artifacts-builder": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-artifacts-builder/SKILL.md",
+      "computedHash": "d52d422ead3fa26859a6af129609841a8536b230a2d649f86e61771d063e05e2"
+    }
+  }
+}
