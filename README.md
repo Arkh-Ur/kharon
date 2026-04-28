@@ -4,23 +4,39 @@
 
 **Arkh-Ur — Data Engineering Division**
 
+[![Version](https://img.shields.io/badge/version-0.1.0--pre-orange)](https://github.com/Arkh-Ur/kharon/releases)
+[![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
+[![Airflow](https://img.shields.io/badge/airflow-3.x-green)](https://airflow.apache.org/)
+[![License](https://img.shields.io/badge/license-Proprietary-red)]()
+
 ---
 
-## Que es Kharōn?
+## Qué es Kharōn?
 
-Kharōn es una plataforma que orquesta scripts existentes sin modificarlos, proporcionando monitoreo en tiempo real, ejecucion bajo demanda via web, y organizacion por cliente.
+Kharōn es una plataforma que orquesta scripts existentes **sin modificarlos**, proporcionando monitoreo en tiempo real, ejecución bajo demanda via web, y organización por cliente.
 
-> *En la mitologia, Caronte (Kharōn) es el barquero que guia las almas a traves del rio. De la misma forma, Kharōn guia cada script a traves de su flujo de ejecucion, monitoreo y registro — sin alterar su naturaleza.*
+> *En la mitología, Caronte (Kharōn) es el barquero que guía las almas a través del río. De la misma forma, Kharōn guía cada script a través de su flujo de ejecución, monitoreo y registro — sin alterar su naturaleza.*
+
+### Características
+
+- 🎛️ **Dashboard en tiempo real** — Metric cards, timeline Gantt, donut de estados, ejecuciones por cliente
+- ⚙️ **Gestión de procesos** — Ver estado, ejecutar, ver logs, eliminar DAGs con confirmación
+- 📄 **Visor de logs** — Navegación por DAG → ejecución → tarea con logs completos
+- 📡 **Monitoreo global** — Filtros por estado, tipo, cliente y fecha con métricas agregadas
+- ❤️ **Salud por cliente** — Health bars, tasas de éxito, fallos consecutivos
+- ➕ **Nuevo Script** — Wizard de 5 pasos con validación, preview del script, y cron guide
+- 🔧 **Configuración** — CRUD de clientes con logos, colores, descripciones
 
 ## Stack
 
-| Capa | Tecnologia |
+| Capa | Tecnología |
 |---|---|
 | Orquestador | Apache Airflow 3.x |
 | Webapp | Streamlit |
 | Lenguaje | Python 3.10+ |
 | Base de datos | SQLite (dev) / PostgreSQL (prod) |
-| Configuracion | YAML |
+| Configuración | YAML |
+| Testing | Playwright (E2E) |
 
 ## Estructura del Proyecto
 
@@ -28,22 +44,26 @@ Kharōn es una plataforma que orquesta scripts existentes sin modificarlos, prop
 kharon/
 ├── airflow_home/         # Airflow home directory
 │   ├── dags/             # DAG definitions
-│   │   ├── utils/        # Shared utilities
-│   │   ├── operators/    # Custom operators
-│   │   ├── config/       # YAML registries
+│   │   ├── utils/        # ScriptRunner, ScriptMonitor
+│   │   ├── operators/    # KharonOperator
+│   │   ├── config/       # YAML registries + client logos
 │   │   └── scripts/      # Support scripts
-│   ├── scripts_externos/ # External scripts (not modified)
+│   ├── scripts_externos/ # External scripts (never modified)
 │   └── logs/             # Execution logs
 ├── webapp/               # Kharōn Streamlit webapp
-│   ├── app.py            # Main entry point
-│   ├── components/       # UI components
+│   ├── app.py            # Main entry point (7 pages, CSS, routing)
+│   ├── components/       # UI components (script_form, badges, etc.)
+│   ├── static/           # SVG logos
 │   └── requirements.txt
+├── tests/
+│   └── e2e/              # Playwright E2E tests
 ├── docs/                 # PRD, TRD, Implementation Plan
+├── DESIGN_AUDIT.md       # 25 prioritized design improvements
 ├── start_kharon.sh       # Startup script
 └── requirements.txt      # Python dependencies
 ```
 
-## Inicio Rapido
+## Inicio Rápido
 
 ```bash
 # 1. Clonar
@@ -73,11 +93,29 @@ chmod +x start_kharon.sh
 | Airflow API/UI | 8080 |
 | Kharōn Webapp | 8501 |
 
-## Documentacion
+## Modos de Ejecución
+
+| Modo | Descripción | Schedule |
+|---|---|---|
+| Bajo Demanda | Solo ejecución manual desde la web | `None` |
+| Continuo | Se re-ejecuta automáticamente al terminar | `@continuous` |
+| Agendado | Según expresión cron | `0 6 * * *` |
+
+## Tests
+
+```bash
+# E2E (requiere servicios corriendo en 8501 y 8080)
+source airflow_venv/bin/activate
+pytest tests/e2e/ -v
+```
+
+## Documentación
 
 - [PRD — Product Requirements Document](docs/PRD.md)
 - [TRD — Technical Requirements Document](docs/TRD.md)
-- [Plan de Implementacion](docs/IMPLEMENTATION_PLAN.md)
+- [Plan de Implementación](docs/IMPLEMENTATION_PLAN.md)
+- [Changelog](CHANGELOG.md)
+- [Design Audit](DESIGN_AUDIT.md)
 
 ## Licencia
 
