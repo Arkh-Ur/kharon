@@ -274,7 +274,6 @@ _KHARON_CSS = """
 def _init_session_state() -> None:
     defaults = {
         "current_page": "📊 Tablero",
-        "client_filter": "Todos",
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -301,19 +300,6 @@ def _get_clients() -> List[dict]:
         return [asdict(c) for c in clients_dict.values()]
     except Exception:
         return []
-
-
-def _get_client_filter_options() -> List[str]:
-    clients = _get_clients()
-    names = ["Todos"] + [c.get("name", "") for c in clients if c.get("name")]
-    return names if len(names) > 1 else ["Todos"]
-
-
-def _filter_by_client(items: List[dict], client_key: str = "client") -> List[dict]:
-    filt = st.session_state.get("client_filter", "Todos")
-    if filt == "Todos":
-        return items
-    return [it for it in items if it.get(client_key) == filt]
 
 
 def _is_kharon_dag(dag: dict) -> bool:
@@ -400,17 +386,6 @@ def _render_sidebar() -> None:
             ):
                 st.session_state.current_page = page
                 st.rerun()
-
-        st.divider()
-        client_options = _get_client_filter_options()
-        st.session_state.client_filter = st.selectbox(
-            "🏢 Filtrar por cliente",
-            options=client_options,
-            index=client_options.index(st.session_state.client_filter)
-            if st.session_state.client_filter in client_options
-            else 0,
-            key="sidebar_client_filter",
-        )
 
         st.divider()
         st.markdown(
@@ -1141,7 +1116,9 @@ def _page_global_monitoring() -> None:
             "Tipo", options=["Todos", "Manual", "Programado"], key="mon_type"
         )
     with col_client:
-        client_names = _get_client_filter_options()
+        _clients_list = _get_clients()
+        client_names = ["Todos"] + [c.get("name", "") for c in _clients_list if c.get("name")]
+        client_names = client_names if len(client_names) > 1 else ["Todos"]
         mon_client = st.selectbox("Cliente", options=client_names, key="mon_client")
     with col_date:
         days_back = st.number_input(
