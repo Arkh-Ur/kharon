@@ -47,7 +47,7 @@ _ARKHUR_LOGO_URI = _svg_to_data_uri("arkh-ur-logo-text.svg")
 _KHARON_CSS = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-    :root {
+:root {
         --primary: #3b82f6;
         --primary-dark: #374151;
         --primary-light: #545B67;
@@ -60,7 +60,13 @@ _KHARON_CSS = """
         --bg-card: #1E2632;
         --text-dark: #e5e7eb;
         --text-muted: #9ca3af;
+        --border-subtle: rgba(255,255,255,0.06);
+        --border-muted: rgba(255,255,255,0.1);
         --border-color: #545B67;
+    }
+
+    .stApp, .stMarkdown, .stTextInput, .stSelectbox, .stTextArea {
+        font-family: system-ui, -apple-system, 'Segoe UI', 'DM Sans', sans-serif !important;
     }
 
     .stApp {
@@ -103,46 +109,48 @@ _KHARON_CSS = """
         width: 100% !important;
         min-width: 100% !important;
         max-width: 100% !important;
-        background: rgba(30, 38, 50, 0.8);
-        border: 1px solid #545B67;
-        color: #e5e7eb !important;
+        background: rgba(17, 24, 39, 0.5);
+        border: 1px solid rgba(255,255,255,0.05);
+        color: #9ca3af !important;
         text-align: left;
-        padding: 10px 16px;
-        border-radius: 6px;
-        transition: all 0.2s;
+        padding: 10px 14px;
+        border-radius: 10px;
+        transition: all 0.15s ease;
         display: block;
     }
-    /* Active sidebar nav button — blue left border accent */
+    /* Active sidebar nav button */
     [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] {
         width: 100% !important;
         min-width: 100% !important;
         max-width: 100% !important;
-        background: rgba(59,130,246,0.12) !important;
-        border: 1px solid rgba(59,130,246,0.3) !important;
-        border-left: 3px solid #3b82f6 !important;
+        background: rgba(59,130,246,0.06) !important;
+        border: 1px solid rgba(59,130,246,0.25) !important;
+        border-left: 2px solid #3b82f6 !important;
         color: #ffffff !important;
         font-weight: 600 !important;
         text-align: left;
-        padding: 10px 16px;
-        border-radius: 6px;
-        transition: all 0.2s;
+        padding: 10px 14px;
+        border-radius: 10px;
+        transition: all 0.15s ease;
         display: block;
+        box-shadow: 0 0 12px rgba(59,130,246,0.08);
     }
 
     .metric-card {
-        background: #1E2632;
-        border-radius: 10px;
-        padding: 20px;
-        padding-top: 17px;
+        background: #111827;
+        border-radius: 16px;
+        padding: 18px 16px;
+        padding-top: 15px;
         box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-        border: 1px solid #545B67;
+        border: 1px solid var(--border-subtle);
         text-align: center;
-        border-top: 3px solid var(--card-accent, #3b82f6);
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        border-top: 2px solid var(--card-accent, #3b82f6);
+        transition: all 0.2s ease;
     }
     .metric-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+        border-color: rgba(var(--card-accent-rgb, 59,130,246), 0.2);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     }
     .metric-card .metric-value {
         font-size: 1.6em;
@@ -150,13 +158,17 @@ _KHARON_CSS = """
         line-height: 1.1;
     }
     .metric-card .metric-label {
-        font-size: 0.9em;
-        color: #9ca3af;
-        margin-top: 4px;
+        font-size: 10px;
+        font-family: monospace;
+        color: #6b7280;
+        margin-top: 6px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        font-weight: 700;
     }
     [data-testid="stSidebar"] .stButton > button:hover {
-        background: rgba(55, 65, 81, 0.6);
-        border-color: #545B67;
+        background: rgba(255,255,255,0.03);
+        border-color: rgba(255,255,255,0.1);
     }
     
     .stButton > button:not(:disabled) {
@@ -180,8 +192,8 @@ _KHARON_CSS = """
         opacity: 0.4 !important;
     }
     [data-testid="stExpander"] > div:first-child:hover {
-        background: rgba(59,130,246,0.05);
-        border-radius: 8px;
+        background: rgba(255,255,255,0.02);
+        border-radius: 10px;
     }
     
     @keyframes pulse-dot {
@@ -195,11 +207,37 @@ _KHARON_CSS = """
         background: #1E2632;
         overflow: hidden;
         margin-top: 4px;
+        border: 1px solid rgba(255,255,255,0.04);
     }
     .health-bar-fill {
         height: 100%;
         border-radius: 4px;
         transition: width 0.4s ease;
+    }
+
+    .kharon-menu-btn {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 100;
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: rgba(17,24,39,0.9);
+        border: 1px solid rgba(255,255,255,0.08);
+        color: #9ca3af;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(8px);
+        transition: all 0.2s;
+        font-size: 18px;
+    }
+    .kharon-menu-btn:hover {
+        background: rgba(17,24,39,0.95);
+        border-color: rgba(255,255,255,0.15);
+        color: #e5e7eb;
     }
 
     h1, h2, h3 {
@@ -246,6 +284,7 @@ _KHARON_CSS = """
         .metric-card {
             padding: 14px 10px;
             padding-top: 12px;
+            border: 1px solid rgba(255,255,255,0.04) !important;
         }
         .metric-card .metric-value {
             font-size: 1.3em;
@@ -372,19 +411,28 @@ def _dag_client_id(dag: dict) -> str:
     return ""
 
 
+def _hex_to_rgb(hex_color: str) -> str:
+    """Convert hex color to 'r,g,b' string for use in rgba()."""
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return "84,91,103"
+    return f"{int(h[0:2],16)},{int(h[2:4],16)},{int(h[4:6],16)}"
+
+
 def _status_dot_html(state: str) -> str:
-    """CSS circle status indicator — no emoji, cross-platform consistent."""
+    """CSS circle status indicator with glow."""
     colors = {
         "success": "#22c55e", "failed": "#ef4444",
         "running": "#3b82f6", "queued": "#f59e0b", "never": "#545B67",
     }
     color = colors.get(state, "#545B67")
     pulse = "animation:pulse-dot 2s infinite;" if state == "running" else ""
+    glow = f"box-shadow:0 0 8px {color};" if state != "never" else ""
     return (
         f'<span style="'
         f'display:inline-block;width:10px;height:10px;'
         f'border-radius:50%;background:{color};'
-        f'{pulse}'
+        f'{pulse}{glow}'
         f'vertical-align:middle;margin-right:6px;'
         f'"></span>'
     )
@@ -408,15 +456,19 @@ _PAGE_MAP = {p: p for p in _PAGES}
 def _render_sidebar() -> None:
     with st.sidebar:
         st.markdown(
-            f'<div style="text-align:center; padding: 8px 0 4px 0;">'
-            f'<img src="{_KHARON_LOGO_URI}" alt="Kharōn" style="width:180px; margin:0 auto; display:block;" />'
+            f'<div style="display:flex;align-items:center;gap:12px;padding:8px 0 4px 0;">'
+            f'<img src="{_KHARON_ICON_URI}" alt="Kharōn" style="width:36px;height:36px;flex-shrink:0;" />'
+            f'<div>'
+            f'<div style="font-size:16px;font-weight:800;letter-spacing:4px;text-transform:uppercase;color:white;line-height:1.1;">Kharōn</div>'
+            f'<div style="font-size:9px;color:#6b7280;letter-spacing:3px;text-transform:uppercase;">Sistema de Monitoreo</div>'
             f'</div>'
-            f'<div style="text-align:center; padding: 0 0 8px 0;">'
-            f'<span style="font-size:0.7em; color:#9ca3af; letter-spacing:0.5px;">Sistema de Monitoreo y Ejecución</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
-        st.divider()
+        st.markdown(
+            '<div style="height:1px;background:rgba(255,255,255,0.05);margin:8px 0 12px 0;"></div>',
+            unsafe_allow_html=True,
+        )
 
         for page in _PAGES:
             is_active = st.session_state.current_page == page
@@ -431,11 +483,16 @@ def _render_sidebar() -> None:
                 st.session_state.current_page = page
                 st.rerun()
 
-        st.divider()
+        st.markdown(
+            '<div style="height:1px;background:rgba(255,255,255,0.04);margin:16px 0 8px 0;"></div>',
+            unsafe_allow_html=True,
+        )
         st.markdown(
             f'<div class="sidebar-footer" style="text-align:center; padding: 4px 0;">'
-            f'<img src="{_ARKHUR_LOGO_URI}" alt="Arkh-Ur" style="width:120px; margin:0 auto; display:block; opacity:0.7;" />'
-            f'<span style="font-size:0.6em; color:#545B67; letter-spacing:0.3px;">© {datetime.now().year}</span>'
+            f'<img src="{_ARKHUR_LOGO_URI}" alt="Arkh-Ur" style="width:100px; margin:0 auto; display:block; opacity:0.5; transition:opacity 0.2s;" '
+            f'onmouseenter="this.style.opacity=0.8" onmouseleave="this.style.opacity=0.5" />'
+            f'<div style="font-size:9px; color:#4b5563; letter-spacing:2px; font-family:monospace; text-transform:uppercase; margin-top:4px;">'
+            f'© Arkh-Ur {datetime.now().year}</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -479,7 +536,7 @@ def _page_dashboard() -> None:
         for col, value, label, color, icon in _placeholder_data:
             with col:
                 st.markdown(
-                    f'<div class="metric-card" style="--card-accent:{color};">'
+                    f'<div class="metric-card" style="--card-accent:{color};--card-accent-rgb:{_hex_to_rgb(color)};">'
                     f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
                     f'<div class="metric-value" style="color:{color}">{value}</div>'
                     f'<div class="metric-label">{label}</div>'
@@ -560,7 +617,7 @@ def _page_dashboard() -> None:
     for col, value, label, color, icon in _metric_data:
         with col:
             st.markdown(
-                f'<div class="metric-card" style="--card-accent:{color};">'
+                f'<div class="metric-card" style="--card-accent:{color};--card-accent-rgb:{_hex_to_rgb(color)};">'
                 f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
                 f'<div class="metric-value" style="color:{color}">{value}</div>'
                 f'<div class="metric-label">{label}</div>'
@@ -812,18 +869,17 @@ def _page_processes() -> None:
         _c = _summary_colors.get(_state, "#545B67")
         _l = _label_map.get(_state, _state)
         _summary_parts.append(
-            f'<span style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;">'
-            f'<span style="width:8px;height:8px;border-radius:50%;background:{_c};display:inline-block;"></span>'
-            f'<span style="color:{_c};font-weight:600;">{_count}</span>'
-            f'<span style="color:#9ca3af;font-size:0.85em;">{_l}</span>'
-            f'</span>'
+            f'<span style="font-family:monospace;font-size:10px;padding:2px 8px;'
+            f'border-radius:99;background:rgba({_hex_to_rgb(_c)},.06);'
+            f'border:1px solid rgba({_hex_to_rgb(_c)},.2);color:{_c};'
+            f'white-space:nowrap;">{_count} {_l}</span>'
         )
     st.markdown(
-        f'<div class="kharon-summary-bar" style="background:#131923;border-radius:8px;padding:12px 16px;margin-bottom:16px;'
-        f'border:1px solid #2d3748;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">'
-        f'<span style="color:#e5e7eb;font-weight:600;margin-right:8px;">Resumen:</span>'
+        f'<div class="kharon-summary-bar" style="background:#111827;border-radius:12px;padding:10px 14px;margin-bottom:16px;'
+        f'border:1px solid rgba(255,255,255,0.05);display:flex;align-items:center;flex-wrap:wrap;gap:6px;">'
+        f'<span style="color:#6b7280;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;font-family:monospace;margin-right:4px;">Resumen</span>'
         + "".join(_summary_parts) +
-        f'<span style="color:#545B67;margin-left:auto;font-size:0.85em;">{len(kharon_dags)} procesos</span>'
+        f'<span style="color:#4b5563;margin-left:auto;font-size:10px;font-family:monospace;">{len(kharon_dags)} proc</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -849,10 +905,11 @@ def _page_processes() -> None:
         last_state = runs[0].get("state", "never") if runs else "never"
         # CSS-based status dot above the expander
         st.markdown(
-            f'<div class="kharon-process-header" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">'
+            f'<div class="kharon-process-header" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;'
+            f'padding:8px 0 4px;border-bottom:1px solid rgba(255,255,255,0.04);">'
             f'{_status_dot_html(last_state)}'
             f'<span style="font-weight:600;color:#e5e7eb;">{desc}</span> '
-            f'<span style="color:#9ca3af;font-size:0.85em;">— {mode}</span>'
+            f'<span style="color:#6b7280;font-size:0.8em;font-family:monospace;">{mode}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -1223,7 +1280,7 @@ def _page_global_monitoring() -> None:
     ]:
         with col:
             st.markdown(
-                f'<div class="metric-card" style="--card-accent:{color};">'
+                f'<div class="metric-card" style="--card-accent:{color};--card-accent-rgb:{_hex_to_rgb(color)};">'
                 f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
                 f'<div class="metric-value" style="color:{color}">{value}</div>'
                 f'<div class="metric-label">{label}</div>'

@@ -351,7 +351,7 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
 
     st.markdown("#### Resumen del Script")
     st.markdown(
-        '<div style="background:#131923;border:1px solid #2d3748;border-radius:10px;padding:20px;">',
+        '<div style="background:#111827;border:1px solid rgba(59,130,246,0.1);border-radius:12px;padding:16px 20px;">',
         unsafe_allow_html=True,
     )
 
@@ -379,9 +379,9 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
     for label, value in review_rows:
         st.markdown(
             f'<div style="display:flex;justify-content:space-between;padding:8px 0;'
-            f'border-bottom:1px solid #1E2632;">'
-            f'<span style="color:#9ca3af;font-size:0.9em;">{label}</span>'
-            f'<span style="color:#e5e7eb;font-size:0.9em;font-weight:500;">{value}</span>'
+            f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+            f'<span style="color:#6b7280;font-size:10px;letter-spacing:1px;text-transform:uppercase;">{label}</span>'
+            f'<span style="font-size:0.9em;font-weight:500;color:#e5e7eb;font-family:monospace;">{value}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
