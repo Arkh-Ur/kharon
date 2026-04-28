@@ -46,8 +46,10 @@ _ARKHUR_LOGO_URI = _svg_to_data_uri("arkh-ur-logo-text.svg")
 
 _KHARON_CSS = """
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
     :root {
-        --primary: #374151;
+        --primary: #3b82f6;
+        --primary-dark: #374151;
         --primary-light: #545B67;
         --secondary: #1E2632;
         --success: #22c55e;
@@ -62,7 +64,17 @@ _KHARON_CSS = """
     }
 
     .stApp {
-        background-color: #0A0F18;
+        background: radial-gradient(ellipse at 50% 0%, #131923 0%, #0A0F18 70%);
+    }
+    
+    .stApp, .stMarkdown, .stTextInput, .stSelectbox, .stTextArea {
+        font-family: 'DM Sans', sans-serif !important;
+    }
+    h1, h2, h3 {
+        font-family: 'Space Grotesk', sans-serif !important;
+    }
+    code, pre {
+        font-family: 'JetBrains Mono', monospace !important;
     }
 
     [data-testid="stSidebar"] {
@@ -87,25 +99,94 @@ _KHARON_CSS = """
         display: block !important;
     }
     [data-testid="stSidebar"] .stButton > button,
-    [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"],
-    [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] {
+    [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] {
         width: 100% !important;
         min-width: 100% !important;
         max-width: 100% !important;
         background: rgba(30, 38, 50, 0.8);
         border: 1px solid #545B67;
         color: #e5e7eb !important;
-        width: 100%;
-        min-width: 100%;
         text-align: left;
         padding: 10px 16px;
         border-radius: 6px;
         transition: all 0.2s;
         display: block;
     }
+    /* Active sidebar nav button — blue left border accent */
+    [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] {
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        background: rgba(59,130,246,0.12) !important;
+        border: 1px solid rgba(59,130,246,0.3) !important;
+        border-left: 3px solid #3b82f6 !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
+        text-align: left;
+        padding: 10px 16px;
+        border-radius: 6px;
+        transition: all 0.2s;
+        display: block;
+    }
+
+    .metric-card {
+        background: #1E2632;
+        border-radius: 10px;
+        padding: 20px;
+        padding-top: 17px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+        border: 1px solid #545B67;
+        text-align: center;
+        border-top: 3px solid var(--card-accent, #3b82f6);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    }
+    .metric-card .metric-value {
+        font-size: 1.6em;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+    .metric-card .metric-label {
+        font-size: 0.9em;
+        color: #9ca3af;
+        margin-top: 4px;
+    }
     [data-testid="stSidebar"] .stButton > button:hover {
         background: rgba(55, 65, 81, 0.6);
         border-color: #545B67;
+    }
+    
+    .stButton > button:not(:disabled) {
+        transition: all 0.15s ease !important;
+    }
+    .stButton > button[data-testid="stBaseButton-primary"] {
+        background: #3b82f6 !important;
+        color: #ffffff !important;
+        border: 1px solid #3b82f6 !important;
+        font-weight: 700 !important;
+        border-radius: 8px !important;
+        padding: 8px 24px !important;
+        transition: all 0.15s ease !important;
+    }
+    .stButton > button[data-testid="stBaseButton-primary"]:hover {
+        background: #2563eb !important;
+        border-color: #2563eb !important;
+        box-shadow: 0 0 16px rgba(59,130,246,0.3);
+    }
+    .stButton > button:disabled {
+        opacity: 0.4 !important;
+    }
+    [data-testid="stExpander"] > div:first-child:hover {
+        background: rgba(59,130,246,0.05);
+        border-radius: 8px;
+    }
+    
+    @keyframes pulse-dot {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.6; transform: scale(1.3); }
     }
     [data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
         background: rgba(55, 65, 81, 0.9);
@@ -261,6 +342,24 @@ def _dag_client_id(dag: dict) -> str:
     return ""
 
 
+def _status_dot_html(state: str) -> str:
+    """CSS circle status indicator — no emoji, cross-platform consistent."""
+    colors = {
+        "success": "#22c55e", "failed": "#ef4444",
+        "running": "#3b82f6", "queued": "#f59e0b", "never": "#545B67",
+    }
+    color = colors.get(state, "#545B67")
+    pulse = "animation:pulse-dot 2s infinite;" if state == "running" else ""
+    return (
+        f'<span style="'
+        f'display:inline-block;width:10px;height:10px;'
+        f'border-radius:50%;background:{color};'
+        f'{pulse}'
+        f'vertical-align:middle;margin-right:6px;'
+        f'"></span>'
+    )
+
+
 # ─── Sidebar ───────────────────────────────────────────────────────────────────
 
 _PAGES = [
@@ -327,6 +426,7 @@ def _render_sidebar() -> None:
 
 def _page_dashboard() -> None:
     st.title("📊 Tablero")
+    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Vista general del estado de ejecuciones</p>", unsafe_allow_html=True)
 
     _PLOTLY_LAYOUT = {
         "paper_bgcolor": "#0A0F18",
@@ -351,11 +451,20 @@ def _page_dashboard() -> None:
     except AirflowClientError as e:
         st.warning(f"Airflow no disponible: {e}")
         col1, col2, col3, col4 = st.columns(4)
-        for col, label in [(col1, "Total Scripts"), (col2, "En Ejecución"), (col3, "Tasa de Éxito"), (col4, "Duración Prom.")]:
+        _placeholder_data = [
+            (col1, "—", "Total Scripts", "#3b82f6", "📦"),
+            (col2, "—", "En Ejecución", "#3b82f6", "⚡"),
+            (col3, "—", "Tasa de Éxito", "#545B67", "✅"),
+            (col4, "—", "Duración Prom.", "#545B67", "⏱"),
+        ]
+        for col, value, label, color, icon in _placeholder_data:
             with col:
                 st.markdown(
-                    f'<div class="metric-card"><div class="metric-value" style="color:#545B67">—</div>'
-                    f'<div class="metric-label">{label}</div></div>',
+                    f'<div class="metric-card" style="--card-accent:{color};">'
+                    f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
+                    f'<div class="metric-value" style="color:{color}">{value}</div>'
+                    f'<div class="metric-label">{label}</div>'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
         fig_placeholder = go.Figure()
@@ -424,15 +533,16 @@ def _page_dashboard() -> None:
 
     col1, col2, col3, col4 = st.columns(4)
     _metric_data = [
-        (col1, total_scripts, "Total Scripts", "#e5e7eb"),
-        (col2, running_count, "En Ejecución", "#3b82f6"),
-        (col3, f"{success_rate:.1f}%", "Tasa de Éxito", "#22c55e"),
-        (col4, f"{avg_min}m {avg_sec}s", "Duración Prom.", "#f59e0b"),
+        (col1, f"{total_scripts}", "Total Scripts", "#3b82f6", "📦"),
+        (col2, f"{running_count}", "En Ejecución", "#3b82f6", "⚡"),
+        (col3, f"{success_rate:.1f}%", "Tasa de Éxito", "#22c55e", "✅"),
+        (col4, f"{avg_min}m {avg_sec}s", "Duración Prom.", "#f59e0b", "⏱"),
     ]
-    for col, value, label, color in _metric_data:
+    for col, value, label, color, icon in _metric_data:
         with col:
             st.markdown(
-                f'<div class="metric-card">'
+                f'<div class="metric-card" style="--card-accent:{color};">'
+                f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
                 f'<div class="metric-value" style="color:{color}">{value}</div>'
                 f'<div class="metric-label">{label}</div>'
                 f'</div>',
@@ -508,6 +618,7 @@ def _page_dashboard() -> None:
             title=dict(text="Timeline de Ejecuciones", font=dict(size=16, color="#e5e7eb")),
             barmode="overlay",
             height=max(300, len(seen_dag_ids) * 40 + 80),
+            xaxis_showticklabels=False,
             xaxis_title="",
             yaxis_title="",
             yaxis_autorange="reversed",
@@ -517,7 +628,7 @@ def _page_dashboard() -> None:
     else:
         st.info("No hay ejecuciones recientes para el timeline.")
 
-    st.divider()
+    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
 
     bottom_left, bottom_right = st.columns(2)
 
@@ -585,7 +696,9 @@ def _page_dashboard() -> None:
                 hole=0.6,
                 marker_colors=colors,
                 textinfo="label+percent",
-                textfont=dict(color="#e5e7eb", size=12),
+                textposition="inside",
+                insidetextorientation="radial",
+                textfont=dict(color="#e5e7eb", size=14),
                 hoverinfo="label+value+percent",
                 sort=False,
             )])
@@ -613,6 +726,7 @@ def _page_dashboard() -> None:
 
 def _page_processes() -> None:
     st.title("⚙️ Procesos")
+    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Gestión y monitoreo de scripts</p>", unsafe_allow_html=True)
 
     try:
         st_autorefresh = getattr(st, "autorefresh", None)
@@ -655,6 +769,46 @@ def _page_processes() -> None:
         st.info("No hay procesos para el cliente seleccionado.")
         return
 
+    # ── Summary bar ──
+    _summary_colors = {
+        "success": "#22c55e", "failed": "#ef4444",
+        "running": "#3b82f6", "queued": "#f59e0b", "never": "#545B67",
+    }
+    _state_counts = {}
+    for dag in kharon_dags:
+        _did = dag.get("dag_id", "")
+        try:
+            _runs_check = client.list_dag_runs(_did, limit=1)
+            _s = _runs_check[0].get("state", "never") if _runs_check else "never"
+        except Exception:
+            _s = "never"
+        _state_counts[_s] = _state_counts.get(_s, 0) + 1
+
+    _label_map = {
+        "success": "OK", "failed": "Failed", "running": "Running",
+        "queued": "En cola", "never": "Sin ejecución",
+    }
+    _summary_parts = []
+    for _state, _count in sorted(_state_counts.items()):
+        _c = _summary_colors.get(_state, "#545B67")
+        _l = _label_map.get(_state, _state)
+        _summary_parts.append(
+            f'<span style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;">'
+            f'<span style="width:8px;height:8px;border-radius:50%;background:{_c};display:inline-block;"></span>'
+            f'<span style="color:{_c};font-weight:600;">{_count}</span>'
+            f'<span style="color:#9ca3af;font-size:0.85em;">{_l}</span>'
+            f'</span>'
+        )
+    st.markdown(
+        f'<div style="background:#131923;border-radius:8px;padding:12px 16px;margin-bottom:16px;'
+        f'border:1px solid #2d3748;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">'
+        f'<span style="color:#e5e7eb;font-weight:600;margin-right:8px;">Resumen:</span>'
+        + "".join(_summary_parts) +
+        f'<span style="color:#545B67;margin-left:auto;font-size:0.85em;">{len(kharon_dags)} procesos</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
     for dag in kharon_dags:
         dag_id = dag.get("dag_id", "")
         desc = dag.get("description") or dag_id
@@ -674,11 +828,14 @@ def _page_processes() -> None:
             runs = []
 
         last_state = runs[0].get("state", "never") if runs else "never"
-        status_dot = {"success": "🟢", "failed": "🔴", "running": "🟡"}.get(last_state, "⚪")
-
-        header = f"{status_dot} {desc} — {mode}"
-
-        with st.expander(header):
+        # CSS-based status dot above the expander
+        st.markdown(
+            f'{_status_dot_html(last_state)}'
+            f'<span style="font-weight:600;color:#e5e7eb;">{desc}</span> '
+            f'<span style="color:#9ca3af;font-size:0.85em;">— {mode}</span>',
+            unsafe_allow_html=True,
+        )
+        with st.expander(f"  Ver detalles ({dag_id})"):
 
             if runs:
                 _color_map = {
@@ -734,7 +891,7 @@ def _page_processes() -> None:
                     paper_bgcolor="#131923",
                     plot_bgcolor="#0A0F18",
                     font_color="#e5e7eb",
-                    height=250,
+                    height=300,
                     xaxis_title="",
                     yaxis_title="Segundos",
                     margin=dict(l=10, r=10, t=40, b=10),
@@ -829,6 +986,7 @@ def _page_processes() -> None:
 
 def _page_view_logs() -> None:
     st.title("📄 Ver Logs")
+    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Exploración detallada de logs de ejecución</p>", unsafe_allow_html=True)
 
     try:
         client = _get_airflow_client()
@@ -940,6 +1098,7 @@ def _page_view_logs() -> None:
 
 def _page_global_monitoring() -> None:
     st.title("📡 Monitoreo Global")
+    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Seguimiento en tiempo real de todas las ejecuciones</p>", unsafe_allow_html=True)
 
     try:
         af = _get_airflow_client()
@@ -1089,6 +1248,7 @@ def _page_global_monitoring() -> None:
 
 def _page_health_by_client() -> None:
     st.title("❤️ Salud por Cliente")
+    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Análisis de salud y rendimiento por cliente</p>", unsafe_allow_html=True)
 
     try:
         af = _get_airflow_client()
@@ -1222,6 +1382,7 @@ def _page_health_by_client() -> None:
 
 def _page_new_script() -> None:
     st.title("➕ Nuevo Script")
+    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Configurá un nuevo script en 5 pasos</p>", unsafe_allow_html=True)
 
     clients = _get_clients()
     if not clients:
@@ -1272,6 +1433,7 @@ def _page_new_script() -> None:
 
 def _page_configuration() -> None:
     st.title("⚙️ Configuración")
+    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Administración de clientes y parámetros del sistema</p>", unsafe_allow_html=True)
 
     col_config, col_health = st.columns(2)
 

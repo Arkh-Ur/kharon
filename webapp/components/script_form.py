@@ -56,20 +56,48 @@ def render_script_form(
 
 
 def _render_step_progress(current: int) -> None:
-    cols = st.columns(len(_STEPS))
-    for i, col in enumerate(cols):
-        with col:
-            bg = "#374151" if i <= current else "#1E2632"
-            text_c = "#e5e7eb" if i <= current else "#545B67"
-            st.markdown(
+    steps_html = '<div style="display:flex;align-items:center;justify-content:center;gap:0;padding:16px 0;">'
+    for i in range(len(_STEPS)):
+        if i < current:
+            bg = "#22c55e"
+            content = "✓"
+            text_c = "#ffffff"
+            border = "2px solid #22c55e"
+        elif i == current:
+            bg = "transparent"
+            content = str(i + 1)
+            text_c = "#3b82f6"
+            border = "2px solid #3b82f6"
+        else:
+            bg = "transparent"
+            content = str(i + 1)
+            text_c = "#545B67"
+            border = "2px solid #545B67"
+
+        steps_html += (
+            f'<div style="'
+            f'width:32px;height:32px;min-width:32px;'
+            f'border-radius:50%;'
+            f'background:{bg};'
+            f'color:{text_c};'
+            f'border:{border};'
+            f'display:flex;align-items:center;justify-content:center;'
+            f'font-size:0.8em;font-weight:700;'
+            f'">{"✓" if i < current else str(i + 1)}</div>'
+        )
+
+        if i < len(_STEPS) - 1:
+            line_color = "#22c55e" if i < current else "#2d3748"
+            steps_html += (
                 f'<div style="'
-                f'background:{bg};color:{text_c};'
-                f'padding:6px 0;border-radius:4px;text-align:center;'
-                f'font-size:0.72em;font-weight:600;">'
-                f'{i + 1}'
-                f"</div>",
-                unsafe_allow_html=True,
+                f'flex:1;height:2px;'
+                f'background:{line_color};'
+                f'min-width:20px;max-width:60px;'
+                f'"></div>'
             )
+
+    steps_html += '</div>'
+    st.markdown(steps_html, unsafe_allow_html=True)
 
 
 def _nav_buttons(can_continue: bool, step_key: str = "") -> None:
@@ -87,6 +115,7 @@ def _nav_buttons(can_continue: bool, step_key: str = "") -> None:
                 "Siguiente ➡",
                 disabled=not can_continue,
                 key=f"next_{step_key}",
+                type="primary",
                 on_click=lambda: st.session_state.update(form_step=st.session_state.form_step + 1),
             )
 
