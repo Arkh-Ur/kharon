@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List
 
+import plotly.graph_objects as go
+import plotly.express as px
+import pandas as pd
 import streamlit as st
 
 from airflow_client import AirflowClient, AirflowClientError
@@ -147,18 +150,34 @@ _KHARON_CSS = """
     }
 
     header[data-testid="stHeader"] {
+        background: none !important;
+        box-shadow: none !important;
+    }
+    header[data-testid="stHeader"] [data-testid="stHeaderActionElements"] {
         display: none !important;
+    }
+    [data-testid="stToolbar"] {
+        display: flex !important;
     }
 
     [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
         display: flex !important;
         flex-direction: column !important;
+        height: 100vh !important;
     }
     [data-testid="stSidebar"] [data-testid="stSidebarContent"] > div {
-        flex: 1 1 auto;
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 auto !important;
+        min-height: 0 !important;
     }
     [data-testid="stSidebar"] .sidebar-footer {
         margin-top: auto !important;
+        padding-top: 16px !important;
+    }
+    [data-testid="stSidebar"] .sidebar-footer > div {
+        position: sticky !important;
+        bottom: 0 !important;
     }
 </style>
 """
@@ -213,12 +232,9 @@ def _filter_by_client(items: List[dict], client_key: str = "client") -> List[dic
 
 _PAGES = [
     "📊 Tablero",
-    "🚀 Ejecutar Scripts",
-    "📄 Ver Logs",
-    "📡 Monitoreo Global",
-    "❤️ Salud por Cliente",
+    "⚙️ Procesos",
     "➕ Nuevo Script",
-    "⚙️ Configuración",
+    "🔧 Configuración",
 ]
 
 _PAGE_MAP = {p: p for p in _PAGES}
@@ -276,48 +292,108 @@ def _render_sidebar() -> None:
 def _page_dashboard() -> None:
     st.title("📊 Tablero")
 
+    _PLOTLY_LAYOUT = {
+        "paper_bgcolor": "#0A0F18",
+        "plot_bgcolor": "#131923",
+        "font_color": "#e5e7eb",
+        "font_family": "JetBrains Mono, monospace",
+        "margin": dict(l=20, r=20, t=40, b=20),
+        "xaxis": dict(gridcolor="#1E2632", zerolinecolor="#545B67"),
+        "yaxis": dict(gridcolor="#1E2632", zerolinecolor="#545B67"),
+    }
+
+    _STATE_COLORS = {
+        "success": "#22c55e",
+        "running": "#3b82f6",
+        "failed": "#ef4444",
+        "queued": "#f59e0b",
+    }
+
     try:
         client = _get_airflow_client()
         dags = client.list_dags(limit=200)
     except AirflowClientError as e:
-        st.error(f"Error al conectar con Airflow: {e}")
+        st.warning(f"Airflow no disponible: {e}")
+        col1, col2, col3, col4 = st.columns(4)
+        for col, label in [(col1, "Total Scripts"), (col2, "En Ejecución"), (col3, "Tasa de Éxito"), (col4, "Duración Prom.")]:
+            with col:
+                st.markdown(
+                    f'<div class="metric-card"><div class="metric-value" style="color:#545B67">—</div>'
+                    f'<div class="metric-label">{label}</div></div>',
+                    unsafe_allow_html=True,
+                )
+        fig_placeholder = go.Figure()
+        fig_placeholder.update_layout(**_PLOTLY_LAYOUT, height=400, title_text="Sin datos (Airflow no disponible)")
+        st.plotly_chart(fig_placeholder, use_container_width=True)
         return
 
     if not dags:
         st.info("No hay DAGs registrados.")
         return
 
+    kharon_dags = [
+        d for d in dags
+        if d.get("dag_id", "").startswith("kharon_")
+        or any(t.get("name", "") == "kharon-auto" for t in d.get("tags", []))
+    ]
+
+    if not kharon_dags:
+        st.info("No hay DAGs de Kharōn registrados.")
+        return
+
     dag_runs_map = {}
-    for dag in dags:
+    dag_client_map = {}
+    for dag in kharon_dags:
         dag_id = dag.get("dag_id", "")
         try:
-            runs = client.list_dag_runs(dag_id, limit=1)
+            runs = client.list_dag_runs(dag_id, limit=10)
             dag_runs_map[dag_id] = runs
         except AirflowClientError:
             dag_runs_map[dag_id] = []
 
-    total = len(dags)
-    success_count = 0
-    failed_count = 0
-    running_count = 0
+        client_name = None
+        for tag in dag.get("tags", []):
+            tag_name = tag.get("name", "")
+            if tag_name.startswith("client_"):
+                client_name = tag_name.replace("client_", "")
+                break
+        dag_client_map[dag_id] = client_name or "sin cliente"
 
-    for runs in dag_runs_map.values():
-        if runs:
-            last_state = runs[0].get("state", "unknown")
-            if last_state == "success":
-                success_count += 1
-            elif last_state == "failed":
-                failed_count += 1
-            elif last_state == "running":
-                running_count += 1
+    all_runs = []
+    for dag_id, runs in dag_runs_map.items():
+        for run in runs:
+            all_runs.append({**run, "dag_id": dag_id, "client": dag_client_map.get(dag_id, "sin cliente")})
+
+    total_scripts = len(kharon_dags)
+    running_count = sum(1 for r in all_runs if r.get("state") == "running")
+
+    completed_runs = [r for r in all_runs if r.get("state") in ("success", "failed")]
+    success_count = sum(1 for r in completed_runs if r.get("state") == "success")
+    success_rate = (success_count / len(completed_runs) * 100) if completed_runs else 0.0
+
+    durations = []
+    for r in completed_runs:
+        start = r.get("start_date")
+        end = r.get("end_date")
+        if start and end:
+            try:
+                dt_start = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+                dt_end = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
+                durations.append((dt_end - dt_start).total_seconds())
+            except (ValueError, TypeError):
+                pass
+    avg_duration_seconds = sum(durations) / len(durations) if durations else 0
+    avg_min = int(avg_duration_seconds // 60)
+    avg_sec = int(avg_duration_seconds % 60)
 
     col1, col2, col3, col4 = st.columns(4)
-    for col, label, value, color in [
-        (col1, "Total DAGs", total, "#374151"),
-        (col2, "Exitosos", success_count, "#22c55e"),
-        (col3, "Fallidos", failed_count, "#ef4444"),
-        (col4, "Ejecutando", running_count, "#f59e0b"),
-    ]:
+    _metric_data = [
+        (col1, total_scripts, "Total Scripts", "#e5e7eb"),
+        (col2, running_count, "En Ejecución", "#3b82f6"),
+        (col3, f"{success_rate:.1f}%", "Tasa de Éxito", "#22c55e"),
+        (col4, f"{avg_min}m {avg_sec}s", "Duración Prom.", "#f59e0b"),
+    ]
+    for col, value, label, color in _metric_data:
         with col:
             st.markdown(
                 f'<div class="metric-card">'
@@ -328,75 +404,322 @@ def _page_dashboard() -> None:
             )
 
     st.divider()
-    st.subheader("DAGs Registrados")
 
-    client_filt = st.session_state.get("client_filter", "Todos")
-    for dag in dags:
-        dag_id = dag.get("dag_id", "")
-        if client_filt != "Todos" and client_filt.lower() not in dag_id.lower():
-            continue
-
-        runs = dag_runs_map.get(dag_id, [])
-        last_state = runs[0].get("state", "unknown") if runs else "unknown"
-        last_run_date = runs[0].get("execution_date") or runs[0].get("start_date") if runs else None
-
-        dag_info = {
-            "dag_id": dag_id,
-            "description": dag.get("description", ""),
-            "status": last_state,
-            "last_run": last_run_date,
-            "schedule_interval": dag.get("schedule_interval", {}),
-            "owners": dag.get("owners", []),
-            "tags": [t.get("name", "") for t in dag.get("tags", [])],
-        }
-
-        client_name = None
-        for tag in dag.get("tags", []):
-            tag_name = tag.get("name", "")
-            if tag_name.startswith("client_"):
-                client_name = tag_name.replace("client_", "")
-                break
-
-        if client_filt != "Todos" and client_name and client_filt.lower() != client_name.lower():
-            continue
-
-        render_dag_card(dag_info, client_badge=client_name)
-
-    st.divider()
-    st.subheader("Ejecuciones Recientes")
-    recent_runs = []
-    for dag_id, runs in dag_runs_map.items():
-        for run in runs[:3]:
-            recent_runs.append({**run, "dag_id": dag_id})
-
-    recent_runs.sort(
-        key=lambda r: r.get("execution_date") or r.get("start_date") or "",
+    all_runs.sort(
+        key=lambda r: r.get("start_date") or r.get("logical_date") or "",
         reverse=True,
     )
-    recent_runs = recent_runs[:20]
+    recent_20 = all_runs[:20]
 
-    if recent_runs:
-        for run in recent_runs:
-            col_state, col_dag, col_date, col_type = st.columns([1, 2, 2, 1])
-            with col_state:
-                render_status_badge(run.get("state", "unknown"))
-            with col_dag:
-                st.markdown(f"**{run.get('dag_id', '—')}**")
-            with col_date:
-                exec_date = run.get("execution_date") or run.get("start_date", "—")
+    if recent_20:
+        gantt_fig = go.Figure()
+        y_labels = []
+        seen_dag_ids = []
+        for run in reversed(recent_20):
+            dag_id = run.get("dag_id", "—")
+            if dag_id not in seen_dag_ids:
+                seen_dag_ids.append(dag_id)
+            y_idx = seen_dag_ids.index(dag_id)
+            y_labels.append(dag_id)
+
+            state = run.get("state", "queued")
+            color = _STATE_COLORS.get(state, "#545B67")
+
+            start_str = run.get("start_date") or run.get("logical_date")
+            end_str = run.get("end_date")
+
+            try:
+                dt_start = datetime.fromisoformat(str(start_str).replace("Z", "+00:00")) if start_str else datetime.now()
+            except (ValueError, TypeError):
+                dt_start = datetime.now()
+
+            if end_str and state in ("success", "failed"):
                 try:
-                    dt = datetime.fromisoformat(str(exec_date).replace("Z", "+00:00"))
-                    st.caption(dt.strftime("%d/%m/%Y %H:%M"))
+                    dt_end = datetime.fromisoformat(str(end_str).replace("Z", "+00:00"))
                 except (ValueError, TypeError):
-                    st.caption(str(exec_date))
-            with col_type:
-                conf = run.get("conf") or {}
-                if conf.get("triggered_from") == "kharon":
-                    st.caption("🔘 Manual")
-                else:
-                    st.caption("⏰ Programado")
+                    dt_end = dt_start + timedelta(minutes=1)
+            elif state == "running":
+                dt_end = datetime.now()
+            else:
+                dt_end = dt_start + timedelta(minutes=1)
+
+            duration_s = (dt_end - dt_start).total_seconds()
+            start_epoch = dt_start.timestamp()
+
+            state_label = {"success": "✓", "failed": "✗", "running": "⟳", "queued": "◷"}.get(state, "?")
+
+            gantt_fig.add_trace(go.Bar(
+                name=dag_id,
+                orientation="h",
+                x=[max(duration_s, 5)],
+                y=[dag_id],
+                base=[start_epoch],
+                text=[state_label],
+                textposition="inside",
+                marker_color=color,
+                hovertext=(
+                    f"<b>{dag_id}</b><br>"
+                    f"Estado: {state}<br>"
+                    f"Inicio: {dt_start.strftime('%H:%M:%S')}<br>"
+                    f"Duración: {int(duration_s // 60)}m {int(duration_s % 60)}s"
+                ),
+                hoverinfo="text",
+                showlegend=False,
+            ))
+
+        gantt_fig.update_layout(
+            **_PLOTLY_LAYOUT,
+            title=dict(text="Timeline de Ejecuciones", font=dict(size=16, color="#e5e7eb")),
+            barmode="overlay",
+            height=max(300, len(seen_dag_ids) * 40 + 80),
+            xaxis_title="",
+            yaxis_title="",
+            yaxis_autorange="reversed",
+            bargap=0.3,
+        )
+        st.plotly_chart(gantt_fig, use_container_width=True)
     else:
-        st.info("No hay ejecuciones recientes.")
+        st.info("No hay ejecuciones recientes para el timeline.")
+
+    st.divider()
+
+    bottom_left, bottom_right = st.columns(2)
+
+    with bottom_left:
+        client_success = {}
+        client_failed = {}
+        for r in all_runs:
+            c = r.get("client", "sin cliente")
+            if r.get("state") == "success":
+                client_success[c] = client_success.get(c, 0) + 1
+            elif r.get("state") == "failed":
+                client_failed[c] = client_failed.get(c, 0) + 1
+
+        if client_success or client_failed:
+            all_clients = sorted(set(list(client_success.keys()) + list(client_failed.keys())))
+            bar_fig = go.Figure(data=[
+                go.Bar(
+                    name="Exitosos",
+                    x=all_clients,
+                    y=[client_success.get(c, 0) for c in all_clients],
+                    marker_color="#22c55e",
+                ),
+                go.Bar(
+                    name="Fallidos",
+                    x=all_clients,
+                    y=[client_failed.get(c, 0) for c in all_clients],
+                    marker_color="#ef4444",
+                ),
+            ])
+            bar_fig.update_layout(
+                **_PLOTLY_LAYOUT,
+                title=dict(text="Ejecuciones por Cliente", font=dict(size=16, color="#e5e7eb")),
+                barmode="group",
+                height=350,
+                legend=dict(
+                    bgcolor="#131923",
+                    font=dict(color="#e5e7eb", size=11),
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1,
+                ),
+                xaxis_title="",
+                yaxis_title="Ejecuciones",
+            )
+            st.plotly_chart(bar_fig, use_container_width=True)
+        else:
+            st.info("Sin datos de clientes.")
+
+    with bottom_right:
+        state_counts = {}
+        for r in all_runs:
+            s = r.get("state", "unknown")
+            state_counts[s] = state_counts.get(s, 0) + 1
+
+        if state_counts:
+            labels = list(state_counts.keys())
+            values = list(state_counts.values())
+            colors = [_STATE_COLORS.get(s, "#545B67") for s in labels]
+
+            donut_fig = go.Figure(data=[go.Pie(
+                labels=labels,
+                values=values,
+                hole=0.6,
+                marker_colors=colors,
+                textinfo="label+percent",
+                textfont=dict(color="#e5e7eb", size=12),
+                hoverinfo="label+value+percent",
+                sort=False,
+            )])
+            donut_fig.update_layout(
+                **_PLOTLY_LAYOUT,
+                title=dict(text="Distribución de Estados", font=dict(size=16, color="#e5e7eb")),
+                height=350,
+                showlegend=True,
+                legend=dict(
+                    bgcolor="#131923",
+                    font=dict(color="#e5e7eb", size=11),
+                    orientation="h",
+                    yanchor="bottom",
+                    y=-0.15,
+                    xanchor="center",
+                    x=0.5,
+                ),
+            )
+            st.plotly_chart(donut_fig, use_container_width=True)
+        else:
+            st.info("Sin datos de estados.")
+
+
+# ─── Page: Procesos ────────────────────────────────────────────────────────────
+
+def _page_processes() -> None:
+    st.title("⚙️ Procesos")
+
+    try:
+        st_autorefresh = getattr(st, "autorefresh", None)
+        if callable(st_autorefresh):
+            st_autorefresh(interval=30000)
+    except Exception:
+        pass
+
+    clients = _get_clients()
+    if not clients:
+        st.warning("No hay clientes registrados.")
+        return
+
+    client_names = ["Todos"] + [c.get("name", "") for c in clients]
+    selected_client = st.selectbox("🏢 Filtrar por cliente", client_names, key="proc_client_filter")
+
+    try:
+        client = _get_airflow_client()
+        all_dags = client.list_dags(limit=200)
+    except AirflowClientError as e:
+        st.warning(f"No se pudo conectar con Airflow: {e}")
+        return
+
+    kharon_dags = [
+        d for d in all_dags
+        if any(t.get("name", "") == "kharon-auto" for t in d.get("tags", []))
+    ]
+
+    if selected_client != "Todos":
+        filtered_dags = []
+        for dag in kharon_dags:
+            tags = [t.get("name", "") for t in dag.get("tags", [])]
+            if f"client_{selected_client}" in tags or selected_client in tags:
+                filtered_dags.append(dag)
+        kharon_dags = filtered_dags
+
+    if not kharon_dags:
+        st.info("No hay procesos para el cliente seleccionado.")
+        return
+
+    for dag in kharon_dags:
+        dag_id = dag.get("dag_id", "")
+        desc = dag.get("description") or dag_id
+        schedule = dag.get("schedule_interval", {})
+        schedule_val = schedule.get("value", "") if isinstance(schedule, dict) else ""
+
+        if schedule_val == "@continuous":
+            mode = "🔄 Continuo"
+        elif not schedule_val:
+            mode = "🎯 Demanda"
+        else:
+            mode = f"📅 {schedule_val}"
+
+        try:
+            runs = client.list_dag_runs(dag_id, limit=1)
+        except AirflowClientError:
+            runs = []
+
+        last_state = runs[0].get("state", "never") if runs else "never"
+        status_dot = {"success": "🟢", "failed": "🔴", "running": "🟡"}.get(last_state, "⚪")
+
+        header = f"{status_dot} {desc} — {mode}"
+
+        with st.expander(header):
+            try:
+                runs = client.list_dag_runs(dag_id, limit=15)
+            except AirflowClientError:
+                runs = []
+
+            if runs:
+                df_data = []
+                for r in runs:
+                    start = r.get("start_date", "")
+                    end = r.get("end_date", "")
+                    state = r.get("state", "")
+                    duration = 0
+                    if start and end:
+                        try:
+                            s = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                            e = datetime.fromisoformat(end.replace("Z", "+00:00"))
+                            duration = (e - s).total_seconds()
+                        except (ValueError, TypeError):
+                            pass
+                    df_data.append({
+                        "run": r.get("dag_run_id", "")[:8],
+                        "duration_sec": duration,
+                        "state": state,
+                        "start": start,
+                    })
+
+                df = pd.DataFrame(df_data)
+                color_map = {
+                    "success": "#22c55e",
+                    "failed": "#ef4444",
+                    "running": "#3b82f6",
+                    "queued": "#f59e0b",
+                }
+                fig = go.Figure(go.Bar(
+                    x=df["run"],
+                    y=df["duration_sec"],
+                    marker_color=[color_map.get(s, "#545B67") for s in df["state"]],
+                    text=[f"{d:.0f}s" for d in df["duration_sec"]],
+                    textposition="auto",
+                ))
+                fig.update_layout(
+                    title="Historial de Ejecuciones",
+                    paper_bgcolor="#131923",
+                    plot_bgcolor="#0A0F18",
+                    font_color="#e5e7eb",
+                    height=250,
+                    xaxis_title="Run ID",
+                    yaxis_title="Duración (seg)",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Sin ejecuciones previas.")
+
+            col_exec, col_log = st.columns(2)
+
+            with col_exec:
+                if st.button("▶ Ejecutar", key=f"exec_{dag_id}"):
+                    try:
+                        result = client.trigger_dag(dag_id)
+                        st.success(f"✅ Ejecución iniciada: {result.get('dag_run_id', '')}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al ejecutar: {e}")
+
+            with col_log:
+                if runs:
+                    last_run = runs[0]
+                    run_id = last_run.get("dag_run_id", "")
+                    if st.button("📄 Ver Log", key=f"log_{dag_id}"):
+                        try:
+                            tasks = client.list_task_instances(dag_id, run_id)
+                            for task in tasks:
+                                task_id = task.get("task_id", "")
+                                log = client.get_task_log(dag_id, run_id, task_id)
+                                if log:
+                                    st.markdown(f"**Task: {task_id}**")
+                                    st.code(log[:3000], language="bash")
+                        except Exception as e:
+                            st.warning(f"No se pudo obtener el log: {e}")
 
 
 # ─── Page 2: Ejecutar Scripts ─────────────────────────────────────────────────
@@ -877,11 +1200,16 @@ def _page_configuration() -> None:
         if submitted and new_name:
             try:
                 cm = _get_client_manager()
-                cm.add_client({
+                client_id = new_name.lower().replace(" ", "_").replace(".", "")
+                cm.create_client({
+                    "id": client_id,
                     "name": new_name,
+                    "short_name": new_name[:3].upper(),
                     "color": new_color,
                     "icon": new_icon,
                     "description": new_description,
+                    "contact_email": f"admin@{client_id}.com",
+                    "contact_name": new_name,
                 })
                 st.toast(f"✅ Cliente '{new_name}' creado exitosamente", icon="✅")
                 st.rerun()
@@ -905,12 +1233,9 @@ def _page_configuration() -> None:
 
 _PAGE_HANDLERS = {
     "📊 Tablero": _page_dashboard,
-    "🚀 Ejecutar Scripts": _page_execute_scripts,
-    "📄 Ver Logs": _page_view_logs,
-    "📡 Monitoreo Global": _page_global_monitoring,
-    "❤️ Salud por Cliente": _page_health_by_client,
+    "⚙️ Procesos": _page_processes,
     "➕ Nuevo Script": _page_new_script,
-    "⚙️ Configuración": _page_configuration,
+    "🔧 Configuración": _page_configuration,
 }
 
 

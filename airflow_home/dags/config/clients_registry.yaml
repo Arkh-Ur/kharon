@@ -1,43 +1,67 @@
-# Clients Registry for Kharōn Orchestration Platform
-# This registry defines all clients with their branding and contact information
-
 clients:
-  - id: "client_alpha"
-    name: "Client Alpha"
-    short_name: "Alpha"
-    description: "Premium client with high-volume ETL processing requirements"
-    color: "#4a1a8a"
-    icon: "office"
-    contact_email: "alpha-client@example.com"
-    contact_name: "Alpha Client Manager"
-    active: true
-
-  - id: "client_beta"
-    name: "Client Beta"
-    short_name: "Beta"
-    description: "Mid-size client focused on sales data and reporting"
-    color: "#0d6efd"
-    icon: "cart"
-    contact_email: "beta-client@example.com"
-    contact_name: "Beta Client Manager"
-    active: true
-
-  - id: "client_gamma"
-    name: "Client Gamma"
-    short_name: "Gamma"
-    description: "Analytics-focused client with maintenance and reporting needs"
-    color: "#198754"
-    icon: "laptop"
-    contact_email: "gamma-client@example.com"
-    contact_name: "Gamma Client Manager"
-    active: true
-
-  - id: "arkh_ur_internal"
-    name: "Arkh-Ur Internal"
-    short_name: "Internal"
-    description: "Internal systems and infrastructure for Arkh-Ur operations"
-    color: "#fd7e14"
-    icon: "gear"
-    contact_email: "internal@arkh-ur.com"
-    contact_name: "Arkh-Ur Operations Team"
-    active: true
+- active: true
+  color: '#4a1a8a'
+  contact_email: alpha-client@example.com
+  contact_name: Alpha Client Manager
+  description: Premium client with high-volume ETL processing requirements
+  icon: office
+  id: client_alpha
+  name: Client Alpha
+  short_name: Alpha
+- active: true
+  color: '#0d6efd'
+  contact_email: beta-client@example.com
+  contact_name: Beta Client Manager
+  description: Mid-size client focused on sales data and reporting
+  icon: cart
+  id: client_beta
+  name: Client Beta
+  short_name: Beta
+- active: true
+  color: '#198754'
+  contact_email: gamma-client@example.com
+  contact_name: Gamma Client Manager
+  description: Analytics-focused client with maintenance and reporting needs
+  icon: laptop
+  id: client_gamma
+  name: Client Gamma
+  short_name: Gamma
+- active: true
+  color: '#fd7e14'
+  contact_email: internal@arkh-ur.com
+  contact_name: Arkh-Ur Operations Team
+  description: Internal systems and infrastructure for Arkh-Ur operations
+  icon: gear
+  id: arkh_ur_internal
+  name: Arkh-Ur Internal
+  short_name: Internal
+empresa_test:
+  active: true
+  color: '#374151'
+  contact_email: admin@empresa_test.com
+  contact_name: Empresa Test
+  description: una empresa
+  icon: 🏢
+  id: empresa_test
+  name: Empresa Test
+  short_name: EMP
+santa_elena_:
+  active: true
+  color: '#3dfa04'
+  contact_email: admin@santa_elena_.com
+  contact_name: 'Santa Elena '
+  description: Descripcion
+  icon: 🚢
+  id: santa_elena_
+  name: 'Santa Elena '
+  short_name: SAN
+test_corp:
+  active: true
+  color: '#374151'
+  contact_email: admin@test_corp.com
+  contact_name: Test Corp
+  description: Test client
+  icon: 🏢
+  id: test_corp
+  name: Test Corp
+  short_name: TES
