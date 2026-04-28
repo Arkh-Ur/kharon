@@ -56,7 +56,7 @@ def render_script_form(
 
 
 def _render_step_progress(current: int) -> None:
-    steps_html = '<div style="display:flex;align-items:center;justify-content:center;gap:0;padding:16px 0;">'
+    steps_html = '<div style="display:flex;align-items:center;justify-content:center;gap:4px;padding:16px 8px;flex-wrap:nowrap;overflow-x:auto;">'
     for i in range(len(_STEPS)):
         if i < current:
             bg = "#22c55e"
@@ -76,13 +76,14 @@ def _render_step_progress(current: int) -> None:
 
         steps_html += (
             f'<div style="'
-            f'width:32px;height:32px;min-width:32px;'
+            f'width:34px;height:34px;min-width:34px;'
             f'border-radius:50%;'
             f'background:{bg};'
             f'color:{text_c};'
             f'border:{border};'
             f'display:flex;align-items:center;justify-content:center;'
-            f'font-size:0.8em;font-weight:700;'
+            f'font-size:0.85em;font-weight:700;'
+            f'touch-action:manipulation;'
             f'">{"✓" if i < current else str(i + 1)}</div>'
         )
 

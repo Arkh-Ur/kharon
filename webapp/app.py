@@ -240,6 +240,75 @@ _KHARON_CSS = """
         position: sticky !important;
         bottom: 0 !important;
     }
+
+    /* ── Mobile responsive (< 768px) ────────────────────────────────── */
+    @media only screen and (max-width: 768px) {
+        .metric-card {
+            padding: 14px 10px;
+            padding-top: 12px;
+        }
+        .metric-card .metric-value {
+            font-size: 1.3em;
+        }
+        .metric-card .metric-label {
+            font-size: 0.8em;
+        }
+        .metric-card > div:first-child {
+            font-size: 1.1em !important;
+        }
+        .metric-card:hover {
+            transform: none;
+        }
+        h1 {
+            font-size: 1.4em !important;
+        }
+        h2 {
+            font-size: 1.15em !important;
+        }
+        h3 {
+            font-size: 1.05em !important;
+        }
+        .stApp {
+            background: #0A0F18;
+        }
+        .stMarkdown p {
+            font-size: 0.9em;
+        }
+        /* Sidebar mobile adjustments */
+        [data-testid="stSidebar"] > div:first-child {
+            width: 260px !important;
+            max-width: 85vw !important;
+        }
+        [data-testid="stSidebar"] .stButton > button,
+        [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"],
+        [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] {
+            padding: 12px 14px;
+            font-size: 0.95em;
+        }
+        /* Health bars smaller on mobile */
+        .health-bar {
+            height: 6px;
+        }
+        /* Summary bar scrollable */
+        .kharon-summary-bar {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            flex-wrap: nowrap !important;
+        }
+        /* Status dot + label row */
+        .kharon-process-header {
+            flex-wrap: wrap;
+        }
+    }
+    @media only screen and (max-width: 480px) {
+        .metric-card .metric-value {
+            font-size: 1.1em;
+        }
+        .metric-card > div:first-child {
+            font-size: 0.9em !important;
+            margin-bottom: 2px !important;
+        }
+    }
 </style>
 """
 
@@ -750,7 +819,7 @@ def _page_processes() -> None:
             f'</span>'
         )
     st.markdown(
-        f'<div style="background:#131923;border-radius:8px;padding:12px 16px;margin-bottom:16px;'
+        f'<div class="kharon-summary-bar" style="background:#131923;border-radius:8px;padding:12px 16px;margin-bottom:16px;'
         f'border:1px solid #2d3748;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">'
         f'<span style="color:#e5e7eb;font-weight:600;margin-right:8px;">Resumen:</span>'
         + "".join(_summary_parts) +
@@ -780,9 +849,11 @@ def _page_processes() -> None:
         last_state = runs[0].get("state", "never") if runs else "never"
         # CSS-based status dot above the expander
         st.markdown(
+            f'<div class="kharon-process-header" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">'
             f'{_status_dot_html(last_state)}'
             f'<span style="font-weight:600;color:#e5e7eb;">{desc}</span> '
-            f'<span style="color:#9ca3af;font-size:0.85em;">— {mode}</span>',
+            f'<span style="color:#9ca3af;font-size:0.85em;">— {mode}</span>'
+            f'</div>',
             unsafe_allow_html=True,
         )
         with st.expander(f"  Ver detalles ({dag_id})"):
