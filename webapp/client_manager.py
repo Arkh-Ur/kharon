@@ -18,13 +18,14 @@ class Client:
     """Client data model."""
     id: str
     name: str
-    short_name: str
-    description: str
     color: str
-    icon: str
-    contact_email: str
-    contact_name: str
+    short_name: str = ""
+    description: str = ""
+    icon: str = ""
+    contact_email: str = ""
+    contact_name: str = ""
     active: bool = True
+    logo_path: str = ""
 
 
 class ClientManager:
@@ -100,10 +101,11 @@ class ClientManager:
                         short_name=client_data.get('short_name', ''),
                         description=client_data.get('description', ''),
                         color=client_data.get('color', '#374151'),
-                        icon=client_data.get('icon', '🏢'),
+                        icon=client_data.get('icon', ''),
                         contact_email=client_data.get('contact_email', ''),
                         contact_name=client_data.get('contact_name', ''),
                         active=client_data.get('active', True),
+                        logo_path=client_data.get('logo_path', ''),
                     )
             else:
                 for key, val in data.items():
@@ -117,10 +119,11 @@ class ClientManager:
                         short_name=val.get('short_name', ''),
                         description=val.get('description', ''),
                         color=val.get('color', '#374151'),
-                        icon=val.get('icon', '🏢'),
+                        icon=val.get('icon', ''),
                         contact_email=val.get('contact_email', ''),
                         contact_name=val.get('contact_name', ''),
                         active=val.get('active', True),
+                        logo_path=val.get('logo_path', ''),
                     )
             
             self._cache_valid = True
@@ -238,7 +241,7 @@ class ClientManager:
             IOError: If file operations fail
         """
         # Validate required fields
-        required_fields = ['id', 'name', 'short_name', 'description', 'color', 'icon', 'contact_email', 'contact_name']
+        required_fields = ['id', 'name', 'color']
         for field in required_fields:
             if field not in client_data:
                 raise ValueError(f"Missing required field: {field}")
@@ -283,7 +286,8 @@ class ClientManager:
         
         if client_id not in self._clients:
             raise ValueError(f"Client {client_id} not found")
-        
+
+        existing_client = self._clients[client_id]
         for field, value in client_data.items():
             if hasattr(existing_client, field):
                 setattr(existing_client, field, value)

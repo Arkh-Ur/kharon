@@ -4,8 +4,10 @@ DAG file generator for Kharōn webapp.
 Generates Airflow DAG files from script metadata and manages script registry.
 """
 
+import os
 import re
 import yaml
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
@@ -38,7 +40,7 @@ class DAGGenerator:
             registry_path: Path for scripts registry. If None, uses config.SCRIPTS_REGISTRY_PATH
         """
         self.dags_dir = dags_dir or config.DAGS_DIR
-        self.registry_path = registry_path or config.SCRIPTS_REGISTRY_PATH
+        self.registry_path = registry_path or config.GENERATED_SCRIPTS_PATH
         
         # Ensure directories exist
         self.dags_dir.mkdir(parents=True, exist_ok=True)
@@ -93,7 +95,7 @@ class DAGGenerator:
             sanitized_script_id = self._sanitize_script_id(script_id)
             
             # Validate script exists
-            script_file = Path(script_path)
+            script_file = Path(os.path.expanduser(script_path))
             if not script_file.exists():
                 result.errors.append(f"Script file not found: {script_path}")
                 return result
@@ -119,7 +121,7 @@ class DAGGenerator:
             )
             
             # Write DAG file
-            dag_file_path = self.dags_dir / f"kharon_{sanitized_script_id}.py"
+            dag_file_path = self.dags_dir / f"{sanitized_script_id}.py"
             with open(dag_file_path, 'w', encoding='utf-8') as f:
                 f.write(dag_content)
             
@@ -135,7 +137,7 @@ class DAGGenerator:
                 "tags": tags or [],
                 "python": python,
                 "execution_mode": execution_mode,
-                "created_at": yaml.safe_dump({"timestamp": "now"})
+                "created_at": datetime.now().isoformat()
             }
             self._update_registry(registry_entry)
             
@@ -169,7 +171,7 @@ class DAGGenerator:
             
             sanitized_script_id = self._sanitize_script_id(script_id)
             
-            dag_file = self.dags_dir / f"kharon_{sanitized_script_id}.py"
+            dag_file = self.dags_dir / f"{sanitized_script_id}.py"
             if dag_file.exists():
                 dag_file.unlink()
             
@@ -221,7 +223,7 @@ class DAGGenerator:
             schedule_param = schedule
         
         # Build DAG tags
-        dag_tags = ["kharon-auto", client_id]
+        dag_tags = ["kharon-auto", f"client_{client_id}"]
         if tags:
             dag_tags.extend(tags)
         

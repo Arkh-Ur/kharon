@@ -3,6 +3,8 @@ from typing import Dict, List, Optional
 
 import streamlit as st
 
+from utils import describe_cron
+
 
 _STEPS = [
     "📋 Información Básica",
@@ -97,9 +99,9 @@ def _step_basic_info(existing_scripts: List[dict]) -> Optional[Dict]:
         value=st.session_state.form_data.get("name", ""),
         key="sf_name",
         placeholder="ej: etl_clientes_diario",
-    )
+    ).strip()
     description = st.text_area(
-        "Descripción *",
+        "Descripción (opcional)",
         value=st.session_state.form_data.get("description", ""),
         key="sf_description",
         placeholder="Descripción clara del propósito del script...",
@@ -112,7 +114,7 @@ def _step_basic_info(existing_scripts: List[dict]) -> Optional[Dict]:
         key="sf_criticality",
     )
 
-    can_continue = bool(name and description)
+    can_continue = bool(name)
 
     if name and name in existing_names:
         st.warning(f"Ya existe un script llamado '{name}'. Usá otro nombre.")
@@ -135,7 +137,7 @@ def _step_script_config() -> Optional[Dict]:
         value=st.session_state.form_data.get("script_path", ""),
         key="sf_script_path",
         placeholder="/ruta/al/script.sh",
-    )
+    ).strip()
     interpreter = st.selectbox(
         "Intérprete",
         options=["bash", "python", "sh"],
@@ -158,12 +160,15 @@ def _step_script_config() -> Optional[Dict]:
         key="sf_retries",
     )
 
-    can_continue = bool(script_path)
+    if script_path and script_path.startswith("~"):
+        script_path = os.path.expanduser(script_path)
 
+    can_continue = False
     if script_path and not os.path.isabs(script_path):
         st.info("Usá una ruta absoluta para el script.")
     elif script_path and os.path.isfile(script_path):
         st.success(f"✅ Script encontrado: {script_path}")
+        can_continue = True
         with st.expander("Vista previa del script"):
             try:
                 with open(script_path, "r") as f:
@@ -192,12 +197,13 @@ def _step_client_assignment(clients: List[dict]) -> Optional[Dict]:
         _nav_buttons(False, "client")
         return None
 
-    client_names = [c.get("name", "") for c in clients]
+    client_options = {c.get("name", ""): c.get("id", c.get("name", "").lower().replace(" ", "_")) for c in clients}
+    client_names = list(client_options.keys())
     default_idx = 0
     saved = st.session_state.form_data.get("client")
     if saved:
         for i, n in enumerate(client_names):
-            if n == saved:
+            if n == saved or client_options[n] == saved:
                 default_idx = i
                 break
 
@@ -207,6 +213,7 @@ def _step_client_assignment(clients: List[dict]) -> Optional[Dict]:
         index=default_idx,
         key="sf_client",
     )
+    selected_id = client_options.get(selected, selected)
     env_vars = st.text_area(
         "Variables de entorno (una por línea, FORMATO=VALOR)",
         value=st.session_state.form_data.get("env_vars", ""),
@@ -216,6 +223,7 @@ def _step_client_assignment(clients: List[dict]) -> Optional[Dict]:
 
     st.session_state.form_data.update({
         "client": selected,
+        "client_id": selected_id,
         "env_vars": env_vars,
     })
 
@@ -246,6 +254,45 @@ def _step_schedule_tags() -> Optional[Dict]:
             key="sf_schedule",
             placeholder="0 6 * * * (todos los días a las 6:00)",
         )
+
+        desc = describe_cron(schedule) if schedule else ""
+        if desc:
+            st.success(f"📅 Se ejecutará: **{desc}**")
+
+        with st.expander("📖 Guía rápida de Cron"):
+            st.markdown("""
+**Formato:** `minuto hora día-mes mes día-semana`
+
+| Campo | Valores | Ejemplo |
+|---|---|---|
+| Minuto | 0–59 | `0`, `30`, `*/15` |
+| Hora | 0–23 | `6`, `9`, `*/2` |
+| Día del mes | 1–31 | `*`, `1`, `15` |
+| Mes | 1–12 | `*`, `1` (Ene) |
+| Día de semana | 0–6 (dom–sáb) | `*`, `0` (dom), `1-5` (lun–vie) |
+
+**Operadores:**
+
+| Símbolo | Significado | Ejemplo |
+|---|---|---|
+| `*` | Cualquier valor | `* * * * *` = cada minuto |
+| `,` | Lista de valores | `0 6,18 * * *` = 6:00 y 18:00 |
+| `-` | Rango | `0 9-17 * * 1-5` = cada hora laburables |
+| `/` | Cada N | `*/30 * * * *` = cada 30 min |
+
+**Ejemplos comunes:**
+
+| Expresión | Significado |
+|---|---|
+| `0 6 * * *` | Todos los días a las 06:00 |
+| `0 */4 * * *` | Cada 4 horas |
+| `*/30 * * * *` | Cada 30 minutos |
+| `0 9 * * 1-5` | Lunes a viernes a las 09:00 |
+| `0 2 * * 0` | Cada domingo a las 02:00 |
+| `0 0 1 * *` | El día 1 de cada mes |
+| `0 6,18 * * *` | Dos veces al día: 06:00 y 18:00 |
+""")
+
     elif execution_mode == "continuous":
         st.info("🔄 El script se re-ejecutará automáticamente al finalizar cada ejecución.")
     else:
@@ -284,10 +331,12 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
     with col2:
         st.markdown(f"**Ruta:** {fd.get('script_path', '—')}")
         st.markdown(f"**Cliente:** {fd.get('client', '—')}")
+        _cron = fd.get('schedule', '')
+        _cron_desc = describe_cron(_cron) if _cron else "—"
         mode_display = {
-            "on_demand": "🎯 Bajo Demanda",
-            "continuous": "🔄 Continuo",
-            "scheduled": f"📅 Agendado (`{fd.get('schedule', '—')}`)",
+            "on_demand": "🎯 Bajo Demanda — ejecución manual",
+            "continuous": "🔄 Continuo — se re-ejecuta al terminar",
+            "scheduled": f"📅 {_cron_desc}",
         }
         st.markdown(f"**Modo:** {mode_display.get(fd.get('execution_mode', ''), '—')}")
         st.markdown(f"**Tags:** {', '.join(fd.get('tags', [])) or '—'}")
@@ -297,7 +346,13 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
         with st.expander("Variables de entorno"):
             st.code(fd["env_vars"])
 
-    submitted = st.button("✅ Crear Script", type="primary", key="sf_submit")
+    col_back, col_spacer, col_submit = st.columns([1, 2, 1])
+    with col_back:
+        if st.button("⬅ Anterior", key="back_review"):
+            st.session_state.form_step -= 1
+            st.rerun()
+    with col_submit:
+        submitted = st.button("✅ Crear Script", type="primary", key="sf_submit", use_container_width=True)
 
     if submitted:
         data = dict(fd)

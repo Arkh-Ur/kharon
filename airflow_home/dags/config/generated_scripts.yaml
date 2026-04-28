@@ -1,0 +1,13 @@
+test:
+  client_id: santa_elena
+  created_at: '2026-04-28T07:23:03.707152'
+  criticality: media
+  execution_mode: scheduled
+  python: bash
+  retries: 2
+  schedule: 0 6 * * *
+  script_id: test
+  script_name: Test
+  script_path: /home/hbuddenberg/developments/kharon/airflow_home/scripts_externos/test/test.sh
+  tags: []
+  timeout: 3600

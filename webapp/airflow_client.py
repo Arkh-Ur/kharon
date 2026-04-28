@@ -161,15 +161,35 @@ class AirflowClient:
             raise
 
     def get_task_log(self, dag_id: str, dag_run_id: str, task_id: str, try_number: int = 1) -> str:
-        endpoint = f"{self.API_PREFIX}/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id}/logs/{try_number}"
-
+        from utils import format_airflow_log
+        endpoint = (
+            f"{self.API_PREFIX}/dags/{dag_id}/dagRuns/{dag_run_id}"
+            f"/taskInstances/{task_id}/logs/{try_number}"
+        )
         try:
             response = self.session.request("GET", f"{self.base_url}{endpoint}")
-            if response.ok:
-                return response.text
-            return ""
-        except RequestException:
-            return ""
+            if not response.ok:
+                try:
+                    err = response.json()
+                    detail = err.get("detail") or err.get("title") or response.text[:200]
+                except Exception:
+                    detail = response.text[:200]
+                raise AirflowClientError(
+                    f"Log no disponible (HTTP {response.status_code}): {detail}",
+                    status_code=response.status_code,
+                )
+            # Airflow 3.x: {"content": <list|str>, "continuation_token": ...}
+            try:
+                data = response.json()
+                if isinstance(data, dict) and "content" in data:
+                    return format_airflow_log(data["content"])
+            except (ValueError, json.JSONDecodeError):
+                pass
+            return response.text
+        except RequestException as exc:
+            if isinstance(exc, AirflowClientError):
+                raise
+            raise AirflowClientError(f"Error de red al obtener log: {exc}") from exc
 
     def pause_dag(self, dag_id: str, paused: bool = True) -> Dict:
         endpoint = f"{self.API_PREFIX}/dags/{dag_id}"
@@ -179,3 +199,11 @@ class AirflowClient:
             return self._request("PATCH", endpoint, json=data)
         except AirflowClientError:
             raise
+
+    def delete_dag(self, dag_id: str) -> bool:
+        endpoint = f"{self.API_PREFIX}/dags/{dag_id}"
+        try:
+            self._request("DELETE", endpoint)
+            return True
+        except AirflowClientError:
+            return False

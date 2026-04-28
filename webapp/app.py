@@ -1,4 +1,6 @@
 import json
+import os
+import random
 import base64
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -13,10 +15,12 @@ from airflow_client import AirflowClient, AirflowClientError
 from client_manager import ClientManager
 from dag_generator import DAGGenerator
 import config
+from utils import describe_cron, extract_primary_color
 from components.dag_card import render_dag_card
 from components.log_viewer import render_log_viewer
 from components.script_form import render_script_form
 from components.status_badge import (
+    _client_icon_html,
     render_client_badge,
     render_criticality_badge,
     render_health_indicator,
@@ -34,6 +38,7 @@ def _svg_to_data_uri(filename: str) -> str:
 
 
 _KHARON_LOGO_URI = _svg_to_data_uri("kharon-logo-text.svg")
+_KHARON_ICON_URI = _svg_to_data_uri("kharon-logo.svg")
 _ARKHUR_LOGO_URI = _svg_to_data_uri("arkh-ur-logo-text.svg")
 
 
@@ -230,11 +235,40 @@ def _filter_by_client(items: List[dict], client_key: str = "client") -> List[dic
     return [it for it in items if it.get(client_key) == filt]
 
 
+def _is_kharon_dag(dag: dict) -> bool:
+    """True si el DAG pertenece a Kharōn — por prefijo O por tag kharon-auto."""
+    if dag.get("dag_id", "").startswith("kharon_"):
+        return True
+    return any(t.get("name", "") == "kharon-auto" for t in dag.get("tags", []))
+
+
+def _dag_run_date(run: dict) -> str:
+    """Fecha canónica de un run (Airflow 3.x renombró execution_date → logical_date)."""
+    return (
+        run.get("logical_date")
+        or run.get("execution_date")
+        or run.get("start_date")
+        or ""
+    )
+
+
+def _dag_client_id(dag: dict) -> str:
+    """Extrae el client_id desde los tags del DAG (tag 'client_{id}')."""
+    for tag in dag.get("tags", []):
+        name = tag.get("name", "")
+        if name.startswith("client_"):
+            return name[len("client_"):]
+    return ""
+
+
 # ─── Sidebar ───────────────────────────────────────────────────────────────────
 
 _PAGES = [
     "📊 Tablero",
     "⚙️ Procesos",
+    "📄 Logs",
+    "📡 Monitoreo",
+    "❤️ Salud",
     "➕ Nuevo Script",
     "🔧 Configuración",
 ]
@@ -592,7 +626,8 @@ def _page_processes() -> None:
         st.warning("No hay clientes registrados.")
         return
 
-    client_names = ["Todos"] + [c.get("name", "") for c in clients]
+    client_options = {c.get("name", ""): c.get("id", "") for c in clients}
+    client_names = ["Todos"] + list(client_options.keys())
     selected_client = st.selectbox("🏢 Filtrar por cliente", client_names, key="proc_client_filter")
 
     try:
@@ -608,10 +643,11 @@ def _page_processes() -> None:
     ]
 
     if selected_client != "Todos":
+        selected_client_id = client_options.get(selected_client, selected_client)
         filtered_dags = []
         for dag in kharon_dags:
             tags = [t.get("name", "") for t in dag.get("tags", [])]
-            if f"client_{selected_client}" in tags or selected_client in tags:
+            if f"client_{selected_client_id}" in tags:
                 filtered_dags.append(dag)
         kharon_dags = filtered_dags
 
@@ -626,14 +662,14 @@ def _page_processes() -> None:
         schedule_val = schedule.get("value", "") if isinstance(schedule, dict) else ""
 
         if schedule_val == "@continuous":
-            mode = "🔄 Continuo"
+            mode = "🔄 Continuo — se re-ejecuta al terminar"
         elif not schedule_val:
-            mode = "🎯 Demanda"
+            mode = "🎯 Demanda — solo ejecución manual"
         else:
-            mode = f"📅 {schedule_val}"
+            mode = f"📅 {describe_cron(schedule_val)}"
 
         try:
-            runs = client.list_dag_runs(dag_id, limit=1)
+            runs = client.list_dag_runs(dag_id, limit=15)
         except AirflowClientError:
             runs = []
 
@@ -643,45 +679,55 @@ def _page_processes() -> None:
         header = f"{status_dot} {desc} — {mode}"
 
         with st.expander(header):
-            try:
-                runs = client.list_dag_runs(dag_id, limit=15)
-            except AirflowClientError:
-                runs = []
 
             if runs:
-                df_data = []
-                for r in runs:
-                    start = r.get("start_date", "")
-                    end = r.get("end_date", "")
-                    state = r.get("state", "")
-                    duration = 0
-                    if start and end:
-                        try:
-                            s = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                            e = datetime.fromisoformat(end.replace("Z", "+00:00"))
-                            duration = (e - s).total_seconds()
-                        except (ValueError, TypeError):
-                            pass
-                    df_data.append({
-                        "run": r.get("dag_run_id", "")[:8],
-                        "duration_sec": duration,
-                        "state": state,
-                        "start": start,
-                    })
-
-                df = pd.DataFrame(df_data)
-                color_map = {
+                _color_map = {
                     "success": "#22c55e",
                     "failed": "#ef4444",
                     "running": "#3b82f6",
                     "queued": "#f59e0b",
                 }
+                df_data = []
+                for r in runs:
+                    start_str = r.get("start_date") or r.get("logical_date", "")
+                    end_str = r.get("end_date", "")
+                    state = r.get("state", "")
+                    duration = 0.0
+                    if start_str:
+                        try:
+                            s = datetime.fromisoformat(str(start_str).replace("Z", "+00:00"))
+                            if end_str:
+                                e = datetime.fromisoformat(str(end_str).replace("Z", "+00:00"))
+                            elif state == "running":
+                                e = datetime.now(s.tzinfo)
+                            else:
+                                e = s
+                            duration = max((e - s).total_seconds(), 0.0)
+                        except (ValueError, TypeError):
+                            pass
+
+                    run_id_full = r.get("dag_run_id", "")
+                    if "__" in run_id_full:
+                        time_part = run_id_full.split("__", 1)[1]
+                        label = time_part.split("T")[1][:8] if "T" in time_part else time_part[:10]
+                    else:
+                        label = run_id_full[-10:] if run_id_full else f"#{len(df_data)}"
+
+                    df_data.append({
+                        "run": label,
+                        "display_dur": max(duration, 0.5),  # mínimo visible
+                        "real_dur": duration,
+                        "state": state,
+                    })
+
+                df = pd.DataFrame(df_data)
                 fig = go.Figure(go.Bar(
                     x=df["run"],
-                    y=df["duration_sec"],
-                    marker_color=[color_map.get(s, "#545B67") for s in df["state"]],
-                    text=[f"{d:.0f}s" for d in df["duration_sec"]],
+                    y=df["display_dur"],
+                    marker_color=[_color_map.get(s, "#545B67") for s in df["state"]],
+                    text=[f"{d:.0f}s" if d >= 1 else "<1s" for d in df["real_dur"]],
                     textposition="auto",
+                    hovertemplate="%{x}<br>%{text}<extra></extra>",
                 ))
                 fig.update_layout(
                     title="Historial de Ejecuciones",
@@ -689,17 +735,18 @@ def _page_processes() -> None:
                     plot_bgcolor="#0A0F18",
                     font_color="#e5e7eb",
                     height=250,
-                    xaxis_title="Run ID",
-                    yaxis_title="Duración (seg)",
+                    xaxis_title="",
+                    yaxis_title="Segundos",
+                    margin=dict(l=10, r=10, t=40, b=10),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"chart_{dag_id}")
             else:
                 st.info("Sin ejecuciones previas.")
 
-            col_exec, col_log = st.columns(2)
+            col_exec, col_log, col_del = st.columns(3)
 
             with col_exec:
-                if st.button("▶ Ejecutar", key=f"exec_{dag_id}"):
+                if st.button("▶ Ejecutar", key=f"exec_{dag_id}", use_container_width=True):
                     try:
                         result = client.trigger_dag(dag_id)
                         st.success(f"✅ Ejecución iniciada: {result.get('dag_run_id', '')}")
@@ -709,109 +756,76 @@ def _page_processes() -> None:
 
             with col_log:
                 if runs:
-                    last_run = runs[0]
-                    run_id = last_run.get("dag_run_id", "")
-                    if st.button("📄 Ver Log", key=f"log_{dag_id}"):
+                    last_run_id = runs[0].get("dag_run_id", "")
+                    _log_key = f"log_data_{dag_id}"
+                    if st.button("📄 Ver Log", key=f"log_{dag_id}", use_container_width=True):
                         try:
-                            tasks = client.list_task_instances(dag_id, run_id)
+                            tasks = client.list_task_instances(dag_id, last_run_id)
+                            parts = []
                             for task in tasks:
                                 task_id = task.get("task_id", "")
-                                log = client.get_task_log(dag_id, run_id, task_id)
-                                if log:
-                                    st.markdown(f"**Task: {task_id}**")
-                                    st.code(log[:3000], language="bash")
-                        except Exception as e:
-                            st.warning(f"No se pudo obtener el log: {e}")
+                                task_state = task.get("state")
+                                try_n = int(task.get("try_number") or 0)
+                                _NO_LOG = {"queued", "scheduled", "no_status", "none", None}
+                                if task_state in _NO_LOG or try_n == 0:
+                                    parts.append(f"=== {task_id} === [{task_state or 'sin estado'}] sin log todavía")
+                                    continue
+                                try_n = max(try_n, 1)
+                                try:
+                                    log = client.get_task_log(dag_id, last_run_id, task_id, try_n)
+                                    if log:
+                                        parts.append(f"=== {task_id} (intento {try_n}) ===\n{log}")
+                                except AirflowClientError as log_err:
+                                    parts.append(f"=== {task_id} === Error: {log_err}")
+                            st.session_state[_log_key] = "\n\n".join(parts) if parts else "(sin contenido de log)"
+                        except Exception as exc:
+                            st.session_state[_log_key] = f"Error al obtener log: {exc}"
+
+            # Log persiste entre reruns usando session_state — se muestra en ancho completo
+            _log_key = f"log_data_{dag_id}"
+            if _log_key in st.session_state:
+                _col_title, _col_close = st.columns([5, 1])
+                with _col_title:
+                    st.markdown("**📄 Log — última ejecución**")
+                with _col_close:
+                    if st.button("✕ Cerrar", key=f"close_log_{dag_id}"):
+                        del st.session_state[_log_key]
+                        st.rerun()
+                st.code(st.session_state[_log_key], language="log")
+
+            with col_del:
+                if st.button("🗑 Eliminar", key=f"del_{dag_id}", use_container_width=True):
+                    st.session_state[f"confirm_del_{dag_id}"] = True
+
+            if st.session_state.get(f"confirm_del_{dag_id}"):
+                st.warning(f"⚠️ ¿Eliminar el proceso **{dag_id}**? Se borrará el DAG y su archivo. Esta acción no se puede deshacer.")
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button("✅ Confirmar eliminación", key=f"del_yes_{dag_id}", type="primary"):
+                        _errors = []
+                        try:
+                            generator = _get_dag_generator()
+                            generator.delete_dag(dag_id)
+                        except Exception as exc:
+                            _errors.append(f"Archivo/registro: {exc}")
+                        try:
+                            client.pause_dag(dag_id, paused=True)
+                            client.delete_dag(dag_id)
+                        except Exception as exc:
+                            _errors.append(f"Airflow API: {exc}")
+                        st.session_state.pop(f"confirm_del_{dag_id}", None)
+                        if _errors:
+                            st.error("Eliminado con errores parciales: " + " | ".join(_errors))
+                        else:
+                            st.toast(f"🗑️ Proceso '{dag_id}' eliminado", icon="🗑️")
+                        st.rerun()
+                with col_no:
+                    if st.button("Cancelar", key=f"del_no_{dag_id}"):
+                        st.session_state.pop(f"confirm_del_{dag_id}", None)
+                        st.rerun()
 
 
-# ─── Page 2: Ejecutar Scripts ─────────────────────────────────────────────────
-
-def _page_execute_scripts() -> None:
-    st.title("🚀 Ejecutar Scripts")
-
-    try:
-        client = _get_airflow_client()
-        dags = client.list_dags(limit=200)
-    except AirflowClientError as e:
-        st.error(f"Error al conectar con Airflow: {e}")
-        return
-
-    kharon_dags = [d for d in dags if d.get("dag_id", "").startswith("kharon_")]
-    if not kharon_dags:
-        st.info("No hay scripts registrados.")
-        return
-
-    client_filt = st.session_state.get("client_filter", "Todos")
-
-    clients_map = {}
-    try:
-        cm = _get_client_manager()
-        for c in cm.list_clients():
-            clients_map[c.get("name", "").lower()] = c
-    except Exception:
-        pass
-
-    grouped = {}
-    for dag in kharon_dags:
-        dag_id = dag.get("dag_id", "")
-        client_name = "Sin cliente"
-        for tag in dag.get("tags", []):
-            tn = tag.get("name", "")
-            if tn.startswith("client_"):
-                client_name = tn.replace("client_", "")
-                break
-
-        if client_filt != "Todos" and client_filt.lower() != client_filt.lower():
-            continue
-
-        grouped.setdefault(client_name, []).append(dag)
-
-    if not grouped:
-        st.info("No hay scripts para el cliente seleccionado.")
-        return
-
-    for client_name, client_dags in grouped.items():
-        client_info = clients_map.get(client_name.lower(), {"name": client_name, "color": "#374151", "icon": "🏢"})
-        with st.expander(f"🏢 {client_name} ({len(client_dags)} scripts)", expanded=True):
-            render_client_badge(client_info)
-            st.markdown("---")
-
-            for dag in client_dags:
-                dag_id = dag.get("dag_id", "")
-                desc = dag.get("description") or "Sin descripción"
-
-                col_info, col_btn = st.columns([3, 1])
-                with col_info:
-                    st.markdown(f"**{dag_id}**")
-                    st.caption(desc)
-
-                with col_btn:
-                    if st.button("▶ Ejecutar", key=f"exec_{dag_id}"):
-                        st.session_state[f"confirm_exec_{dag_id}"] = True
-
-                if st.session_state.get(f"confirm_exec_{dag_id}"):
-                    st.warning(f"¿Confirmar ejecución de `{dag_id}`?")
-                    col_yes, col_no = st.columns(2)
-                    with col_yes:
-                        if st.button("✅ Confirmar", key=f"yes_{dag_id}"):
-                            try:
-                                client.trigger_dag(
-                                    dag_id,
-                                    conf={"triggered_from": "kharon", "manual": True},
-                                )
-                                st.toast(f"✅ {dag_id} ejecutado correctamente", icon="✅")
-                                st.session_state[f"confirm_exec_{dag_id}"] = False
-                            except AirflowClientError as e:
-                                st.error(f"Error al ejecutar {dag_id}: {e}")
-                                st.session_state[f"confirm_exec_{dag_id}"] = False
-                    with col_no:
-                        if st.button("❌ Cancelar", key=f"no_{dag_id}"):
-                            st.session_state[f"confirm_exec_{dag_id}"] = False
-
-                st.markdown("---")
-
-
-# ─── Page 3: Ver Logs ─────────────────────────────────────────────────────────
+# ─── Page: Ver Logs ───────────────────────────────────────────────────────────
 
 def _page_view_logs() -> None:
     st.title("📄 Ver Logs")
@@ -823,7 +837,7 @@ def _page_view_logs() -> None:
         st.error(f"Error al conectar con Airflow: {e}")
         return
 
-    kharon_dags = [d for d in dags if d.get("dag_id", "").startswith("kharon_")]
+    kharon_dags = [d for d in dags if _is_kharon_dag(d)]
     if not kharon_dags:
         st.info("No hay DAGs disponibles.")
         return
@@ -849,7 +863,7 @@ def _page_view_logs() -> None:
     run_options = {}
     for run in runs:
         run_id = run.get("dag_run_id", "")
-        exec_date = run.get("execution_date") or run.get("start_date", "")
+        exec_date = _dag_run_date(run)
         state = run.get("state", "unknown")
         try:
             dt = datetime.fromisoformat(str(exec_date).replace("Z", "+00:00"))
@@ -875,18 +889,48 @@ def _page_view_logs() -> None:
         st.info("No hay tareas para esta ejecución.")
         return
 
-    task_options = {t.get("task_id", ""): t.get("task_id", "") for t in tasks}
-    selected_task = st.selectbox("Seleccioná una tarea", options=list(task_options.keys()), key="log_task_select")
+    _STATE_ICON = {
+        "success": "✅", "failed": "❌", "running": "🔄",
+        "queued": "⏳", "scheduled": "📅", "skipped": "⏭️",
+        "up_for_retry": "🔁", "upstream_failed": "⚠️",
+    }
+    _task_map = {t.get("task_id", ""): t for t in tasks if t.get("task_id")}
+
+    def _task_label(tid: str) -> str:
+        t = _task_map.get(tid, {})
+        state = t.get("state", "?")
+        icon = _STATE_ICON.get(state, "❓")
+        try_n = t.get("try_number", 0)
+        return f"{tid}  {icon} {state}  (intento {try_n})"
+
+    selected_task = st.selectbox(
+        "Seleccioná una tarea",
+        options=list(_task_map.keys()),
+        format_func=_task_label,
+        key="log_task_select",
+    )
 
     if not selected_task:
         return
 
+    task_obj = _task_map[selected_task]
+    task_state = task_obj.get("state")          # puede ser None (JSON null)
+    try_number = int(task_obj.get("try_number") or 0)
+
     st.session_state.selected_task_id = selected_task
+
+    _NO_LOG_STATES = {"queued", "scheduled", "no_status", "none", None}
+    if task_state in _NO_LOG_STATES or try_number == 0:
+        label = task_state or "sin estado"
+        st.info(f"La tarea está en estado **{label}** (intento {try_number}) — aún no hay log disponible.")
+        return
+
+    try_number = max(try_number, 1)
 
     st.divider()
 
     try:
-        log_content = client.get_task_log(selected_dag, selected_run, selected_task)
+        log_content = client.get_task_log(selected_dag, selected_run, selected_task, try_number)
         render_log_viewer(log_content, auto_refresh=True)
     except AirflowClientError as e:
         st.error(f"Error al obtener log: {e}")
@@ -898,66 +942,83 @@ def _page_global_monitoring() -> None:
     st.title("📡 Monitoreo Global")
 
     try:
-        client = _get_airflow_client()
-        dags = client.list_dags(limit=200)
+        af = _get_airflow_client()
+        dags = af.list_dags(limit=200)
     except AirflowClientError as e:
         st.error(f"Error al conectar con Airflow: {e}")
         return
 
-    kharon_dags = [d for d in dags if d.get("dag_id", "").startswith("kharon_")]
+    # Incluye DAGs por tag kharon-auto O prefijo kharon_ (DAGs manuales incluidos)
+    kharon_dags = [d for d in dags if _is_kharon_dag(d)]
 
-    all_runs = []
+    # Construir mapa dag_id → client_id para filtrar por cliente usando tags
+    dag_client_map: dict = {d.get("dag_id", ""): _dag_client_id(d) for d in kharon_dags}
+
+    all_runs: list = []
     for dag in kharon_dags:
         dag_id = dag.get("dag_id", "")
         try:
-            runs = client.list_dag_runs(dag_id, limit=10)
+            runs = af.list_dag_runs(dag_id, limit=15)
             for run in runs:
                 run["dag_id"] = dag_id
+                run["_client_id"] = dag_client_map.get(dag_id, "")
                 all_runs.append(run)
         except AirflowClientError:
             continue
 
-    all_runs.sort(
-        key=lambda r: r.get("execution_date") or r.get("start_date") or "",
-        reverse=True,
-    )
-    all_runs = all_runs[:100]
+    all_runs.sort(key=lambda r: _dag_run_date(r), reverse=True)
+    all_runs = all_runs[:200]
 
+    # ── Filtros ──────────────────────────────────────────────────────────────────
     col_status, col_type, col_client, col_date = st.columns(4)
     with col_status:
-        status_filter = st.selectbox("Estado", options=["Todos", "success", "failed", "running", "queued"], key="mon_status")
+        status_filter = st.selectbox(
+            "Estado",
+            options=["Todos", "success", "failed", "running", "queued"],
+            key="mon_status",
+        )
     with col_type:
-        type_filter = st.selectbox("Tipo", options=["Todos", "Manual", "Programado"], key="mon_type")
+        type_filter = st.selectbox(
+            "Tipo", options=["Todos", "Manual", "Programado"], key="mon_type"
+        )
     with col_client:
-        client_options = _get_client_filter_options()
-        mon_client = st.selectbox("Cliente", options=client_options, key="mon_client")
+        client_names = _get_client_filter_options()
+        mon_client = st.selectbox("Cliente", options=client_names, key="mon_client")
     with col_date:
-        days_back = st.number_input("Últimos N días", min_value=1, max_value=90, value=7, key="mon_days")
+        days_back = st.number_input(
+            "Últimos N días", min_value=1, max_value=90, value=7, key="mon_days"
+        )
 
     cutoff = datetime.now().astimezone() - timedelta(days=days_back)
 
+    # ── Aplicar filtros ───────────────────────────────────────────────────────────
+    # Obtener el client_id del nombre seleccionado
+    _clients = _get_clients()
+    _name_to_id = {c.get("name", ""): c.get("id", "") for c in _clients}
+    selected_client_id = _name_to_id.get(mon_client, "") if mon_client != "Todos" else ""
+
     filtered = []
     for run in all_runs:
-        state = run.get("state", "unknown")
-        if status_filter != "Todos" and state != status_filter:
+        if status_filter != "Todos" and run.get("state", "") != status_filter:
             continue
 
+        # Tipo: usa run_type de Airflow 3.x primero, después conf como fallback
+        run_type = run.get("run_type", "")
         conf = run.get("conf") or {}
-        is_manual = conf.get("triggered_from") == "kharon"
+        is_manual = run_type == "manual" or conf.get("triggered_from") == "kharon"
         if type_filter == "Manual" and not is_manual:
             continue
         if type_filter == "Programado" and is_manual:
             continue
 
-        if mon_client != "Todos":
-            dag_id = run.get("dag_id", "")
-            if mon_client.lower() not in dag_id.lower():
-                continue
+        # Cliente: comparar contra el client_id guardado en el run (desde tags)
+        if selected_client_id and run.get("_client_id", "") != selected_client_id:
+            continue
 
-        exec_date_str = run.get("execution_date") or run.get("start_date")
-        if exec_date_str:
+        date_str = _dag_run_date(run)
+        if date_str:
             try:
-                exec_dt = datetime.fromisoformat(str(exec_date_str).replace("Z", "+00:00"))
+                exec_dt = datetime.fromisoformat(str(date_str).replace("Z", "+00:00"))
                 if exec_dt < cutoff:
                     continue
             except (ValueError, TypeError):
@@ -965,6 +1026,7 @@ def _page_global_monitoring() -> None:
 
         filtered.append(run)
 
+    # ── Métricas ──────────────────────────────────────────────────────────────────
     total_f = len(filtered)
     success_f = sum(1 for r in filtered if r.get("state") == "success")
     failed_f = sum(1 for r in filtered if r.get("state") == "failed")
@@ -987,29 +1049,40 @@ def _page_global_monitoring() -> None:
             )
 
     st.divider()
-    st.subheader(f"Ejecuciones ({len(filtered)} resultados)")
+    st.subheader(f"Ejecuciones ({total_f} resultados)")
+
+    if not filtered:
+        st.info("No hay ejecuciones que coincidan con los filtros.")
+        return
 
     for run in filtered[:50]:
-        col_state, col_dag, col_date, col_type, col_run = st.columns([1, 2, 2, 1, 2])
+        col_state, col_dag, col_client_col, col_date_col, col_type_col = st.columns([1, 2, 1, 2, 1])
+
         with col_state:
             render_status_badge(run.get("state", "unknown"))
+
         with col_dag:
             st.markdown(f"**{run.get('dag_id', '—')}**")
-        with col_date:
-            exec_date = run.get("execution_date") or run.get("start_date", "—")
+
+        with col_client_col:
+            cid = run.get("_client_id", "")
+            st.caption(cid or "—")
+
+        with col_date_col:
+            date_str = _dag_run_date(run)
             try:
-                dt = datetime.fromisoformat(str(exec_date).replace("Z", "+00:00"))
+                dt = datetime.fromisoformat(str(date_str).replace("Z", "+00:00"))
                 st.caption(dt.strftime("%d/%m/%Y %H:%M"))
             except (ValueError, TypeError):
-                st.caption(str(exec_date))
-        with col_type:
+                st.caption(str(date_str) if date_str else "—")
+
+        with col_type_col:
+            run_type = run.get("run_type", "")
             conf = run.get("conf") or {}
-            if conf.get("triggered_from") == "kharon":
+            if run_type == "manual" or conf.get("triggered_from") == "kharon":
                 st.caption("🔘 Manual")
             else:
-                st.caption("⏰ Programado")
-        with col_run:
-            st.caption(run.get("dag_run_id", "")[:20] + "...")
+                st.caption("⏰ Auto")
 
 
 # ─── Page 5: Salud por Cliente ────────────────────────────────────────────────
@@ -1017,72 +1090,129 @@ def _page_global_monitoring() -> None:
 def _page_health_by_client() -> None:
     st.title("❤️ Salud por Cliente")
 
-    monitoring_data = []
-    monitoring_dir = config.MONITORING_DIR
-    if monitoring_dir:
-        import pathlib
-        mon_path = pathlib.Path(monitoring_dir)
-        if mon_path.exists():
-            json_files = sorted(mon_path.glob("*.json"), reverse=True)
-            if json_files:
-                latest = json_files[0]
-                try:
-                    with open(latest, "r") as f:
-                        monitoring_data = json.load(f)
-                except (json.JSONDecodeError, OSError) as e:
-                    st.warning(f"Error al leer datos de monitoreo: {e}")
-
-    if not monitoring_data:
-        st.info("No hay datos de monitoreo disponibles. Ejecutá el monitoreo primero.")
+    try:
+        af = _get_airflow_client()
+        dags = af.list_dags(limit=200)
+    except AirflowClientError as e:
+        st.error(f"Error al conectar con Airflow: {e}")
         return
 
-    grouped = {}
-    for entry in monitoring_data:
-        client_name = entry.get("client", "Sin cliente")
-        grouped.setdefault(client_name, []).append(entry)
+    kharon_dags = [d for d in dags if _is_kharon_dag(d)]
+    if not kharon_dags:
+        st.info("No hay DAGs de Kharōn registrados.")
+        return
 
-    for client_name, scripts in grouped.items():
-        total_scripts = len(scripts)
-        healthy_count = sum(1 for s in scripts if s.get("status") == "healthy")
-        unhealthy_count = sum(1 for s in scripts if s.get("status") == "unhealthy")
+    # ── Calcular salud por DAG desde los runs de Airflow ─────────────────────────
+    dag_health: list = []
+    progress = st.progress(0, text="Calculando estado de salud…")
+    total_dags = len(kharon_dags)
 
-        health_pct = (healthy_count / total_scripts * 100) if total_scripts > 0 else 0
-        bar_color = "#22c55e" if health_pct >= 80 else "#f59e0b" if health_pct >= 50 else "#ef4444"
+    for idx, dag in enumerate(kharon_dags):
+        dag_id = dag.get("dag_id", "")
+        client_id = _dag_client_id(dag) or "sin_cliente"
+
+        try:
+            runs = af.list_dag_runs(dag_id, limit=20)
+        except AirflowClientError:
+            runs = []
+
+        completed = [r for r in runs if r.get("state") in ("success", "failed")]
+        total = len(completed)
+
+        if total == 0:
+            dag_health.append({
+                "dag_id": dag_id, "client_id": client_id,
+                "status": "unknown", "success_rate": None,
+                "consecutive_failures": 0, "last_state": None,
+                "last_date": None, "total_runs": 0,
+            })
+        else:
+            success_count = sum(1 for r in completed if r.get("state") == "success")
+            rate = success_count / total
+
+            consecutive_failures = 0
+            for r in runs:
+                if r.get("state") == "failed":
+                    consecutive_failures += 1
+                elif r.get("state") == "success":
+                    break
+
+            last = runs[0]
+            dag_health.append({
+                "dag_id": dag_id, "client_id": client_id,
+                "status": "healthy" if (rate >= 0.8 and consecutive_failures < 3) else "unhealthy",
+                "success_rate": rate,
+                "consecutive_failures": consecutive_failures,
+                "last_state": last.get("state"),
+                "last_date": _dag_run_date(last),
+                "total_runs": total,
+            })
+
+        progress.progress((idx + 1) / total_dags)
+
+    progress.empty()
+
+    # ── Agrupar por cliente ────────────────────────────────────────────────────
+    grouped: dict = {}
+    for entry in dag_health:
+        grouped.setdefault(entry["client_id"], []).append(entry)
+
+    for client_id, scripts in sorted(grouped.items()):
+        known = [s for s in scripts if s["status"] != "unknown"]
+        healthy_count = sum(1 for s in known if s["status"] == "healthy")
+        unhealthy_count = sum(1 for s in known if s["status"] == "unhealthy")
+        unknown_count = len(scripts) - len(known)
+
+        if known:
+            health_pct = healthy_count / len(known) * 100
+            bar_color = "#22c55e" if health_pct >= 80 else "#f59e0b" if health_pct >= 50 else "#ef4444"
+            pct_label = f"{health_pct:.0f}% saludable"
+            bar_w = f"{health_pct:.0f}%"
+        else:
+            bar_color, pct_label, bar_w = "#545B67", "Sin ejecuciones", "0%"
 
         with st.container():
-            col_header, col_bar = st.columns([2, 3])
-            with col_header:
-                st.markdown(f"### 🏢 {client_name}")
-                st.caption(f"{total_scripts} scripts — {healthy_count} saludables, {unhealthy_count} con problemas")
+            col_hdr, col_bar = st.columns([2, 3])
+            with col_hdr:
+                st.markdown(f"### 🏢 {client_id}")
+                parts = []
+                if healthy_count:
+                    parts.append(f"{healthy_count} ✅")
+                if unhealthy_count:
+                    parts.append(f"{unhealthy_count} ❌")
+                if unknown_count:
+                    parts.append(f"{unknown_count} ❓ sin datos")
+                st.caption(f"{len(scripts)} scripts — " + " · ".join(parts) if parts else f"{len(scripts)} scripts")
 
             with col_bar:
                 st.markdown(
                     f'<div class="health-bar">'
-                    f'<div class="health-bar-fill" style="width:{health_pct:.0f}%;background:{bar_color};"></div>'
+                    f'<div class="health-bar-fill" style="width:{bar_w};background:{bar_color};"></div>'
                     f'</div>'
-                    f'<span style="font-size:0.75em;color:{bar_color};">{health_pct:.0f}% saludable</span>',
+                    f'<span style="font-size:0.75em;color:{bar_color};">{pct_label}</span>',
                     unsafe_allow_html=True,
                 )
 
-            with st.expander(f"Ver detalle de {client_name}"):
-                for script in scripts:
-                    col_name, col_health, col_detail = st.columns([2, 1, 2])
+            with st.expander(f"Ver detalle — {client_id}"):
+                for s in scripts:
+                    col_name, col_hlth, col_detail = st.columns([2, 1, 2])
                     with col_name:
-                        st.markdown(f"**{script.get('script_name', script.get('dag_id', '—'))}**")
-                        if script.get("criticality"):
-                            render_criticality_badge(script["criticality"])
-                    with col_health:
-                        render_health_indicator({
-                            "status": script.get("status", "unknown"),
-                            "detail": script.get("detail", ""),
-                        })
+                        st.markdown(f"**{s['dag_id']}**")
+                    with col_hlth:
+                        render_health_indicator({"status": s["status"], "detail": s["last_state"] or ""})
                     with col_detail:
-                        if script.get("last_run"):
-                            st.caption(f"Última ejecución: {script['last_run']}")
-                        if script.get("consecutive_failures", 0) > 0:
-                            st.caption(f"⚠️ {script['consecutive_failures']} fallos consecutivos")
-                        if script.get("success_rate") is not None:
-                            st.caption(f"Tasa de éxito: {script['success_rate']:.1%}")
+                        if s["last_date"]:
+                            try:
+                                dt = datetime.fromisoformat(str(s["last_date"]).replace("Z", "+00:00"))
+                                st.caption(f"Último: {dt.strftime('%d/%m %H:%M')} [{s['last_state']}]")
+                            except (ValueError, TypeError):
+                                st.caption(f"Último: {s['last_date']}")
+                        else:
+                            st.caption("Sin ejecuciones")
+                        if s["success_rate"] is not None:
+                            st.caption(f"Éxito: {s['success_rate']:.0%}  ({s['total_runs']} runs)")
+                        if s["consecutive_failures"] > 0:
+                            st.caption(f"⚠️ {s['consecutive_failures']} fallos consecutivos")
                     st.markdown("---")
 
         st.markdown("---")
@@ -1119,7 +1249,7 @@ def _page_new_script() -> None:
                     script_id=result.get("name", "").replace(" ", "_").lower(),
                     script_name=result.get("name", ""),
                     script_path=result.get("script_path", ""),
-                    client_id=result.get("client", ""),
+                    client_id=result.get("client_id", result.get("client", "")),
                     timeout=result.get("timeout", 3600),
                     retries=result.get("retries", 2),
                     schedule=result.get("schedule"),
@@ -1179,45 +1309,115 @@ def _page_configuration() -> None:
     st.subheader("Clientes Registrados")
     clients = _get_clients()
     if clients:
-        cols_per_row = 3
-        for i in range(0, len(clients), cols_per_row):
-            cols = st.columns(cols_per_row)
-            for j, col in enumerate(cols):
-                if i + j < len(clients):
-                    with col:
-                        render_client_badge(clients[i + j])
+        tags_html = '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;padding:8px 0;">'
+        for c in clients:
+            name = c.get("name", "")
+            color = c.get("color", "#374151")
+            try:
+                r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+                bg = f"rgba({r},{g},{b},0.18)"
+            except Exception:
+                bg = "rgba(55,65,81,0.18)"
+
+            icon_html = _client_icon_html(c)
+            tags_html += (
+                f'<span style="background-color:{bg};color:{color};'
+                f'padding:5px 14px;border-radius:14px;font-size:0.85em;'
+                f'font-weight:600;white-space:nowrap;display:inline-flex;'
+                f'align-items:center;gap:6px;">'
+                f'{icon_html} {name}</span>'
+            )
+        tags_html += '</div>'
+        st.markdown(tags_html, unsafe_allow_html=True)
+
+        st.markdown("---")
+        options = [c.get("name", "") for c in clients]
+        selected = st.selectbox("Seleccioná un cliente para eliminar", [""] + options, key="sel_del_client")
+
+        if selected:
+            cid = next((c.get("id", "") for c in clients if c.get("name") == selected), "")
+            col_warn, col_cancel, col_del = st.columns([3, 1, 1])
+            with col_warn:
+                st.warning(f"⚠️ ¿Eliminar **{selected}**? Esta acción no se puede deshacer.")
+            with col_cancel:
+                if st.button("Cancelar", key="cancel_del"):
+                    st.rerun()
+            with col_del:
+                if st.button("🗑 Eliminar", type="primary", key="confirm_del"):
+                    try:
+                        cm = _get_client_manager()
+                        cm.delete_client(cid)
+                        st.toast(f"🗑️ Cliente '{selected}' eliminado", icon="🗑️")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al eliminar: {e}")
     else:
         st.info("No hay clientes registrados.")
 
     st.divider()
 
     st.subheader("Agregar Cliente")
-    with st.form("add_client_form"):
-        new_name = st.text_input("Nombre del cliente *", placeholder="ej: ACME Corp")
-        new_color = st.color_picker("Color", value="#374151", key="new_client_color")
-        new_icon = st.text_input("Icono (emoji)", value="🏢", key="new_client_icon")
-        new_description = st.text_area("Descripción", placeholder="Descripción del cliente...", key="new_client_desc")
 
-        submitted = st.form_submit_button("Crear Cliente")
-        if submitted and new_name:
+    if "add_client_color" not in st.session_state:
+        st.session_state.add_client_color = f"#{random.randint(0x334, 0xBBBBBB):06x}"
+    if "_color_picker_counter" not in st.session_state:
+        st.session_state._color_picker_counter = 0
+
+    new_name = st.text_input("Nombre del cliente *", placeholder="ej: ACME Corp", key="new_client_name")
+
+    _logo_uploaded = st.file_uploader(
+        "Logo (PNG, JPG, SVG, BMP) — opcional",
+        type=["png", "jpg", "jpeg", "svg", "bmp"],
+        key="new_client_logo_uploader",
+    )
+
+    if _logo_uploaded:
+        logo_bytes = _logo_uploaded.getvalue()
+        extracted = extract_primary_color(logo_bytes, _logo_uploaded.name)
+        if extracted and st.session_state.get("_last_logo_name") != _logo_uploaded.name:
+            st.session_state["_last_logo_name"] = _logo_uploaded.name
+            st.session_state.add_client_color = extracted
+            st.session_state._color_picker_counter += 1
+            st.rerun()
+
+    _cp_key = f"new_client_color_{st.session_state._color_picker_counter}"
+    new_color = st.color_picker("Color del cliente", value=st.session_state.add_client_color, key=_cp_key)
+    st.session_state.add_client_color = new_color
+
+    new_description = st.text_area("Descripción (opcional)", placeholder="Descripción del cliente...", key="new_client_desc")
+
+    if st.button("✅ Crear Cliente", type="primary", key="create_client_btn", use_container_width=True):
+        if new_name:
             try:
                 cm = _get_client_manager()
-                client_id = new_name.lower().replace(" ", "_").replace(".", "")
+                clean_name = new_name.strip()
+                client_id = clean_name.lower().replace(" ", "_").replace(".", "")
+
+                logo_path = ""
+                if _logo_uploaded:
+                    logos_dir = config.CONFIG_DIR / "client_logos"
+                    logos_dir.mkdir(exist_ok=True)
+                    ext = Path(_logo_uploaded.name).suffix
+                    logo_path = str(logos_dir / f"{client_id}{ext}")
+                    with open(logo_path, "wb") as f:
+                        f.write(_logo_uploaded.getbuffer())
+
                 cm.create_client({
                     "id": client_id,
-                    "name": new_name,
-                    "short_name": new_name[:3].upper(),
-                    "color": new_color,
-                    "icon": new_icon,
+                    "name": clean_name,
+                    "short_name": clean_name[:3].upper(),
+                    "color": st.session_state.add_client_color,
+                    "icon": "",
+                    "logo_path": logo_path,
                     "description": new_description,
                     "contact_email": f"admin@{client_id}.com",
-                    "contact_name": new_name,
+                    "contact_name": clean_name,
                 })
-                st.toast(f"✅ Cliente '{new_name}' creado exitosamente", icon="✅")
+                st.toast(f"✅ Cliente '{clean_name}' creado exitosamente", icon="✅")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error al crear cliente: {e}")
-        elif submitted and not new_name:
+        else:
             st.warning("El nombre es obligatorio.")
 
     st.divider()
@@ -1236,6 +1436,9 @@ def _page_configuration() -> None:
 _PAGE_HANDLERS = {
     "📊 Tablero": _page_dashboard,
     "⚙️ Procesos": _page_processes,
+    "📄 Logs": _page_view_logs,
+    "📡 Monitoreo": _page_global_monitoring,
+    "❤️ Salud": _page_health_by_client,
     "➕ Nuevo Script": _page_new_script,
     "🔧 Configuración": _page_configuration,
 }
@@ -1246,7 +1449,7 @@ _PAGE_HANDLERS = {
 def main() -> None:
     st.set_page_config(
         page_title="Kharōn — Arkh-Ur",
-        page_icon="⚓",
+        page_icon=_KHARON_ICON_URI,
         layout="wide",
     )
     st.markdown(_KHARON_CSS, unsafe_allow_html=True)

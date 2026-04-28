@@ -38,3 +38,14 @@ client_gamma:
   id: client_gamma
   name: Client Gamma
   short_name: Gamma
+santa_elena:
+  active: true
+  color: '#ad2e29'
+  contact_email: admin@santa_elena.com
+  contact_name: Santa Elena
+  description: ''
+  icon: ''
+  id: santa_elena
+  logo_path: /home/hbuddenberg/developments/kharon/airflow_home/dags/config/client_logos/santa_elena.jpg
+  name: Santa Elena
+  short_name: SAN

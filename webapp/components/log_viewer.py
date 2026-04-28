@@ -36,11 +36,8 @@ def render_log_viewer(log_content: str, auto_refresh: bool = False) -> None:
 
     if auto_refresh:
         with col_refresh:
-            st.checkbox(
-                "🔄 Auto-refresh",
-                key="log_auto_refresh",
-                value=False,
-            )
+            if st.button("🔄 Refrescar", key="log_refresh_btn", use_container_width=True):
+                st.rerun()
 
     lines = log_content.split("\n")
 

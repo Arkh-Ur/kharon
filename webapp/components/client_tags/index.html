@@ -1,0 +1,72 @@
+<html>
+<head>
+<style>
+  body { margin: 0; padding: 0; font-family: inherit; }
+  .tags-container { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 14px;
+    font-size: 0.82em;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+  }
+  .tag:hover { opacity: 0.9; }
+  .tag-x {
+    cursor: pointer;
+    font-size: 0.85em;
+    opacity: 0.5;
+    margin-left: 2px;
+    transition: opacity 0.15s, color 0.15s;
+    background: none;
+    border: none;
+    padding: 0 2px;
+    line-height: 1;
+    font-weight: 700;
+    color: inherit;
+  }
+  .tag-x:hover { opacity: 1; color: #ef4444; }
+</style>
+</head>
+<body>
+<div class="tags-container" id="tags"></div>
+<script>
+  const container = document.getElementById('tags');
+
+  function render(event) {
+    const args = event.detail.args;
+    const clients = JSON.parse(args.data);
+    container.innerHTML = '';
+
+    clients.forEach(c => {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.style.backgroundColor = c.bg;
+      tag.style.color = c.color;
+      tag.textContent = c.icon + ' ' + c.name;
+
+      const x = document.createElement('button');
+      x.className = 'tag-x';
+      x.textContent = '\u2715';
+      x.title = 'Eliminar ' + c.name;
+      x.onclick = () => {
+        tag.style.opacity = '0.3';
+        x.textContent = '...';
+        Streamlit.setComponentValue({ deleted: c.id, name: c.name });
+      };
+
+      tag.appendChild(x);
+      container.appendChild(tag);
+    });
+
+    Streamlit.setFrameHeight(50);
+  }
+
+  Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, render);
+  Streamlit.setComponentReady();
+</script>
+</body>
+</html>

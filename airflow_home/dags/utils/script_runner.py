@@ -81,7 +81,7 @@ class ScriptRunner:
             PermissionError: If script is not executable
             subprocess.SubprocessError: For execution errors
         """
-        script_path_obj = Path(script_path)
+        script_path_obj = Path(os.path.expanduser(script_path))
         if not script_path_obj.exists():
             raise FileNotFoundError(f"Script not found: {script_path}")
             

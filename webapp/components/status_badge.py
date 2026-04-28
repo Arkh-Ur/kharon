@@ -1,3 +1,7 @@
+import base64
+import os
+from pathlib import Path
+
 import streamlit as st
 
 
@@ -51,18 +55,45 @@ def render_status_badge(status: str) -> None:
     st.markdown(html, unsafe_allow_html=True)
 
 
+def _client_icon_html(client: dict) -> str:
+    """Logo image si existe, sino cuadrado de inicial con color del cliente."""
+    logo_path = client.get("logo_path", "")
+    color = client.get("color", "#374151")
+    name = client.get("name", "?")
+    initial = name[0].upper() if name else "?"
+
+    if logo_path and os.path.isfile(logo_path):
+        ext = Path(logo_path).suffix.lstrip(".").lower()
+        mime = {"svg": "svg+xml", "png": "png", "jpg": "jpeg", "jpeg": "jpeg", "bmp": "bmp"}.get(ext, "png")
+        try:
+            with open(logo_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            return (
+                f'<img src="data:image/{mime};base64,{b64}" '
+                f'style="height:16px;width:16px;object-fit:contain;vertical-align:middle;">'
+            )
+        except OSError:
+            pass
+
+    return (
+        f'<span style="display:inline-flex;align-items:center;justify-content:center;'
+        f'width:16px;height:16px;min-width:16px;background:{color};color:#fff;'
+        f'font-size:0.55em;font-weight:800;border-radius:3px;">{initial}</span>'
+    )
+
+
 def render_client_badge(client: dict) -> None:
-    """Renderiza un badge con el color e icono del cliente.
+    """Renderiza un badge con logo (o inicial) y nombre del cliente.
 
     Args:
-        client: Dict con claves 'name', 'color' (hex), 'icon' (emoji opcional).
+        client: Dict con claves 'name', 'color' (hex), 'logo_path' (opcional).
     """
     name = client.get("name", "Desconocido")
     color = client.get("color", "#374151")
-    icon = client.get("icon", "🏢")
-    bg = _lighten_color(color, 0.75)
+    bg = _lighten_color(color)
+    icon_html = _client_icon_html(client)
 
-    html = _badge_html(name, bg, color, icon)
+    html = _badge_html(name, bg, color, icon_html)
     st.markdown(html, unsafe_allow_html=True)
 
 
@@ -104,13 +135,11 @@ def render_criticality_badge(criticality: str) -> None:
 
 
 def _lighten_color(hex_color: str, factor: float = 0.7) -> str:
+    """Devuelve un rgba semitransparente del color para badges en tema dark."""
     hex_color = hex_color.lstrip("#")
     if len(hex_color) != 6:
-        return "#1E2632"
+        return "rgba(55,65,81,0.2)"
     r = int(hex_color[0:2], 16)
     g = int(hex_color[2:4], 16)
     b = int(hex_color[4:6], 16)
-    r = int(r + (255 - r) * factor)
-    g = int(g + (255 - g) * factor)
-    b = int(b + (255 - b) * factor)
-    return f"#{r:02x}{g:02x}{b:02x}"
+    return f"rgba({r},{g},{b},0.2)"
