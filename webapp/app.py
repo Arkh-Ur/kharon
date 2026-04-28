@@ -188,31 +188,6 @@ _KHARON_CSS = """
         0%, 100% { opacity: 1; transform: scale(1); }
         50% { opacity: 0.6; transform: scale(1.3); }
     }
-    [data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
-        background: rgba(55, 65, 81, 0.9);
-        border-color: #374151;
-        color: #e5e7eb !important;
-    }
-
-    .metric-card {
-        background: #1E2632;
-        border-radius: 10px;
-        padding: 20px;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-        border: 1px solid #545B67;
-        text-align: center;
-    }
-    .metric-card .metric-value {
-        font-size: 2.2em;
-        font-weight: 800;
-        color: var(--primary);
-        line-height: 1.1;
-    }
-    .metric-card .metric-label {
-        font-size: 0.85em;
-        color: #9ca3af;
-        margin-top: 4px;
-    }
 
     .health-bar {
         height: 8px;
@@ -1169,15 +1144,16 @@ def _page_global_monitoring() -> None:
     running_f = sum(1 for r in filtered if r.get("state") == "running")
 
     col1, col2, col3, col4 = st.columns(4)
-    for col, label, value, color in [
-        (col1, "Total Ejecuciones", total_f, "#374151"),
-        (col2, "Exitosas", success_f, "#22c55e"),
-        (col3, "Fallidas", failed_f, "#ef4444"),
-        (col4, "En ejecución", running_f, "#f59e0b"),
+    for col, label, value, color, icon in [
+        (col1, "Total Ejecuciones", total_f, "#3b82f6", "📊"),
+        (col2, "Exitosas", success_f, "#22c55e", "✅"),
+        (col3, "Fallidas", failed_f, "#ef4444", "❌"),
+        (col4, "En ejecución", running_f, "#f59e0b", "⚡"),
     ]:
         with col:
             st.markdown(
-                f'<div class="metric-card">'
+                f'<div class="metric-card" style="--card-accent:{color};">'
+                f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
                 f'<div class="metric-value" style="color:{color}">{value}</div>'
                 f'<div class="metric-label">{label}</div>'
                 f'</div>',
@@ -1397,8 +1373,8 @@ def _page_new_script() -> None:
                     execution_mode=result.get("execution_mode", "scheduled"),
                 )
                 if gen_result.success:
-                    st.balloons()
                     st.success(f"✅ Script **{result.get('name', '')}** creado exitosamente.")
+                    st.toast("🎉 DAG generado — Airflow lo detectará en ~30s", icon="✅")
                     st.info("El DAG se generará en el próximo ciclo de parsing de Airflow (~30s).")
                 else:
                     st.error(f"Error: {', '.join(gen_result.errors)}")
@@ -1443,7 +1419,7 @@ def _page_configuration() -> None:
         except AirflowClientError as e:
             st.error(f"Airflow no disponible: {e}")
 
-    st.divider()
+    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
     st.subheader("Clientes Registrados")
     clients = _get_clients()
@@ -1493,7 +1469,7 @@ def _page_configuration() -> None:
     else:
         st.info("No hay clientes registrados.")
 
-    st.divider()
+    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
     st.subheader("Agregar Cliente")
 
@@ -1559,13 +1535,33 @@ def _page_configuration() -> None:
         else:
             st.warning("El nombre es obligatorio.")
 
-    st.divider()
+    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
     st.subheader("Información del Registro")
     try:
         cm = _get_client_manager()
         registry_info = cm.get_cache_status()
-        st.json(registry_info)
+        if isinstance(registry_info, dict):
+            info_html = '<div style="background:#131923;border:1px solid #2d3748;border-radius:8px;padding:12px 16px;">'
+            label_map = {
+                "file_path": "Archivo",
+                "clients_count": "Clientes registrados",
+                "last_loaded": "Última carga",
+                "format": "Formato",
+            }
+            for key, val in registry_info.items():
+                label = label_map.get(key, key.replace("_", " ").title())
+                info_html += (
+                    f'<div style="display:flex;justify-content:space-between;padding:6px 0;'
+                    f'border-bottom:1px solid #1E2632;">'
+                    f'<span style="color:#9ca3af;font-size:0.85em;">{label}</span>'
+                    f'<span style="color:#e5e7eb;font-size:0.85em;font-family:JetBrains Mono,monospace;">{val}</span>'
+                    f'</div>'
+                )
+            info_html += '</div>'
+            st.markdown(info_html, unsafe_allow_html=True)
+        else:
+            st.json(registry_info)
     except Exception as e:
         st.info(f"No se pudo obtener información del registro: {e}")
 

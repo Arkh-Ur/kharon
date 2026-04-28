@@ -349,27 +349,43 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
     fd = st.session_state.form_data
 
     st.markdown("#### Resumen del Script")
-    col1, col2 = st.columns(2)
+    st.markdown(
+        '<div style="background:#131923;border:1px solid #2d3748;border-radius:10px;padding:20px;">',
+        unsafe_allow_html=True,
+    )
 
-    with col1:
-        st.markdown(f"**Nombre:** {fd.get('name', '—')}")
-        st.markdown(f"**Descripción:** {fd.get('description', '—')}")
-        st.markdown(f"**Criticalidad:** {fd.get('criticality', '—')}")
-        st.markdown(f"**Intérprete:** {fd.get('interpreter', '—')}")
+    _cron = fd.get('schedule', '')
+    _cron_desc = describe_cron(_cron) if _cron else "—"
+    mode_display = {
+        "on_demand": "🎯 Bajo Demanda — ejecución manual",
+        "continuous": "🔄 Continuo — se re-ejecuta al terminar",
+        "scheduled": f"📅 {_cron_desc}",
+    }
 
-    with col2:
-        st.markdown(f"**Ruta:** {fd.get('script_path', '—')}")
-        st.markdown(f"**Cliente:** {fd.get('client', '—')}")
-        _cron = fd.get('schedule', '')
-        _cron_desc = describe_cron(_cron) if _cron else "—"
-        mode_display = {
-            "on_demand": "🎯 Bajo Demanda — ejecución manual",
-            "continuous": "🔄 Continuo — se re-ejecuta al terminar",
-            "scheduled": f"📅 {_cron_desc}",
-        }
-        st.markdown(f"**Modo:** {mode_display.get(fd.get('execution_mode', ''), '—')}")
-        st.markdown(f"**Tags:** {', '.join(fd.get('tags', [])) or '—'}")
-        st.markdown(f"**Timeout:** {fd.get('timeout', 3600)}s | **Reintentos:** {fd.get('retries', 2)}")
+    review_rows = [
+        ("📋 Nombre", fd.get('name', '—')),
+        ("📝 Descripción", fd.get('description') or '—'),
+        ("🔴 Criticalidad", fd.get('criticality', '—')),
+        ("🔧 Intérprete", fd.get('interpreter', '—')),
+        ("📂 Ruta", fd.get('script_path', '—')),
+        ("🏢 Cliente", fd.get('client', '—')),
+        ("⏱ Modo", mode_display.get(fd.get('execution_mode', ''), '—')),
+        ("🏷 Tags", ', '.join(fd.get('tags', [])) or '—'),
+        ("⏰ Timeout", f"{fd.get('timeout', 3600)}s"),
+        ("🔁 Reintentos", str(fd.get('retries', 2))),
+    ]
+
+    for label, value in review_rows:
+        st.markdown(
+            f'<div style="display:flex;justify-content:space-between;padding:8px 0;'
+            f'border-bottom:1px solid #1E2632;">'
+            f'<span style="color:#9ca3af;font-size:0.9em;">{label}</span>'
+            f'<span style="color:#e5e7eb;font-size:0.9em;font-weight:500;">{value}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if fd.get("env_vars"):
         with st.expander("Variables de entorno"):

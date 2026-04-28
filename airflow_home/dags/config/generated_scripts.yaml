@@ -1,6 +1,6 @@
 test:
   client_id: santa_elena
-  created_at: '2026-04-28T07:23:03.707152'
+  created_at: '2026-04-28T18:31:24.830967'
   criticality: media
   execution_mode: scheduled
   python: bash
