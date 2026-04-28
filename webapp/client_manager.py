@@ -77,40 +77,51 @@ class ClientManager:
             raise IOError(f"Failed to save registry file: {e}") from e
     
     def load_clients(self) -> Dict[str, Client]:
-        """Load all clients from registry.
-        
-        Returns:
-            Dict of Client objects keyed by client ID
-            
-        Raises:
-            ValueError: If YAML parsing fails
-            IOError: If file operations fail
-        """
         try:
             data = self._load_yaml()
             self._clients = {}
             
-            clients_list = data.get('clients', []) if isinstance(data, dict) else []
-            self._clients = {}
+            if not isinstance(data, dict):
+                self._cache_valid = True
+                return {}
             
-            for client_data in clients_list:
-                if not isinstance(client_data, dict):
-                    continue
-                client_id = client_data.get('id', '')
-                if not client_id:
-                    continue
-                client_obj = Client(
-                    id=client_id,
-                    name=client_data.get('name', ''),
-                    short_name=client_data.get('short_name', ''),
-                    description=client_data.get('description', ''),
-                    color=client_data.get('color', '#374151'),
-                    icon=client_data.get('icon', '🏢'),
-                    contact_email=client_data.get('contact_email', ''),
-                    contact_name=client_data.get('contact_name', ''),
-                    active=client_data.get('active', True)
-                )
-                self._clients[client_id] = client_obj
+            clients_list = data.get('clients', [])
+            
+            if isinstance(clients_list, list) and clients_list:
+                for client_data in clients_list:
+                    if not isinstance(client_data, dict):
+                        continue
+                    client_id = client_data.get('id', '')
+                    if not client_id:
+                        continue
+                    self._clients[client_id] = Client(
+                        id=client_id,
+                        name=client_data.get('name', ''),
+                        short_name=client_data.get('short_name', ''),
+                        description=client_data.get('description', ''),
+                        color=client_data.get('color', '#374151'),
+                        icon=client_data.get('icon', '🏢'),
+                        contact_email=client_data.get('contact_email', ''),
+                        contact_name=client_data.get('contact_name', ''),
+                        active=client_data.get('active', True),
+                    )
+            else:
+                for key, val in data.items():
+                    if key == 'clients' or not isinstance(val, dict):
+                        continue
+                    if 'id' not in val:
+                        val['id'] = key
+                    self._clients[key] = Client(
+                        id=val.get('id', key),
+                        name=val.get('name', ''),
+                        short_name=val.get('short_name', ''),
+                        description=val.get('description', ''),
+                        color=val.get('color', '#374151'),
+                        icon=val.get('icon', '🏢'),
+                        contact_email=val.get('contact_email', ''),
+                        contact_name=val.get('contact_name', ''),
+                        active=val.get('active', True),
+                    )
             
             self._cache_valid = True
             return deepcopy(self._clients)

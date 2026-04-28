@@ -210,7 +210,9 @@ def _get_dag_generator() -> DAGGenerator:
 def _get_clients() -> List[dict]:
     try:
         cm = _get_client_manager()
-        return cm.list_clients()
+        clients_dict = cm.load_clients()
+        from dataclasses import asdict
+        return [asdict(c) for c in clients_dict.values()]
     except Exception:
         return []
 
@@ -1223,7 +1225,7 @@ def _page_configuration() -> None:
     st.subheader("Información del Registro")
     try:
         cm = _get_client_manager()
-        registry_info = cm.get_registry_info()
+        registry_info = cm.get_cache_status()
         st.json(registry_info)
     except Exception as e:
         st.info(f"No se pudo obtener información del registro: {e}")
