@@ -1120,6 +1120,8 @@ def _page_processes() -> None:
             else:
                 st.info("Sin ejecuciones previas.")
 
+            col_exec, col_log, col_cfg, col_mode, col_del = st.columns([1, 1, 1, 1.2, 1])
+
             with col_exec:
                 if st.button("▶ Ejecutar", key=f"exec_{dag_id}", use_container_width=True):
                     try:
@@ -1285,8 +1287,6 @@ def _page_processes() -> None:
                         del st.session_state[_log_key]
                         st.rerun()
                 st.code(st.session_state[_log_key], language="log")
-
-            col_exec, col_log, col_cfg, col_mode, col_del = st.columns([1, 1, 1, 1.2, 1])
 
             if st.session_state.get(f"confirm_del_{dag_id}"):
                 st.warning(f"⚠️ ¿Eliminar el proceso **{dag_id}**? Se borrará el DAG y su archivo. Esta acción no se puede deshacer.")
