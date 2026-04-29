@@ -48,7 +48,7 @@ fi
 export KHARON_PORT="${KHARON_PORT:-8501}"
 
 # Virtual environment
-VENV_DIR="${KHARON_HOME}/airflow_venv"
+VENV_DIR="${KHARON_HOME}/.venv"
 
 # ============================================================================
 # Functions
@@ -69,31 +69,23 @@ log_error() {
 check_prerequisites() {
     log_info "Checking prerequisites..."
     
-    # Check Python
     if ! command -v python3 &> /dev/null; then
-        log_error "Python 3 not found. Please install Python 3.10+"
+        log_error "Python 3 not found. Please install Python 3.11+"
         exit 1
     fi
     log_info "Python: $(python3 --version)"
     
-    # Check virtual environment
-    if [ ! -d "$VENV_DIR" ]; then
-        log_warn "Virtual environment not found at $VENV_DIR"
-        log_info "Creating virtual environment..."
-        python3 -m venv "$VENV_DIR"
-        log_info "Virtual environment created"
+    if ! command -v uv &> /dev/null; then
+        log_error "uv not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        exit 1
     fi
+    log_info "uv: $(uv --version)"
     
-    # Activate virtual environment
-    source "$VENV_DIR/bin/activate"
+    uv sync --extra dev --project "${KHARON_HOME}" 2>&1 | tail -1
+    log_info "Dependencies synced"
+    
+    source "${VENV_DIR}/bin/activate"
     log_info "Virtual environment activated"
-    
-    # Check Airflow
-    if ! command -v airflow &> /dev/null; then
-        log_warn "Airflow not found. Installing dependencies..."
-        pip install -r "${KHARON_HOME}/requirements.txt" 2>/dev/null
-        log_info "Dependencies installed"
-    fi
     
     log_info "Airflow: $(airflow version 2>/dev/null || echo 'not installed')"
 }
@@ -158,10 +150,6 @@ start_airflow() {
 start_webapp() {
     log_info "Starting Kharōn webapp..."
     
-    # Install webapp dependencies if needed
-    pip install -r "${KHARON_HOME}/webapp/requirements.txt" 2>/dev/null
-    
-    # Start Streamlit
     cd "${KHARON_HOME}/webapp"
     streamlit run app.py \
         --server.port "$KHARON_PORT" \

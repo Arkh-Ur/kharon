@@ -33,10 +33,11 @@ Kharōn es una plataforma que orquesta scripts existentes **sin modificarlos**, 
 |---|---|
 | Orquestador | Apache Airflow 3.x |
 | Webapp | Streamlit |
-| Lenguaje | Python 3.10+ |
+| Lenguaje | Python 3.11+ |
 | Base de datos | SQLite (dev) / PostgreSQL (prod) |
 | Configuración | YAML |
 | Testing | Playwright (E2E) |
+| Gestor de paquetes | uv |
 
 ## Estructura del Proyecto
 
@@ -70,18 +71,13 @@ kharon/
 git clone https://github.com/Arkh-Ur/kharon.git
 cd kharon
 
-# 2. Crear virtualenv
-python3 -m venv airflow_venv
-source airflow_venv/bin/activate
+# 2. Instalar uv (si no lo tenés)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 3. Instalar dependencias
-pip install -r requirements.txt
+# 3. Sincronizar dependencias
+uv sync --extra dev
 
-# 4. Inicializar Airflow
-export AIRFLOW_HOME=$(pwd)/airflow_home
-airflow db migrate
-
-# 5. Iniciar Kharōn
+# 4. Iniciar Kharōn
 chmod +x start_kharon.sh
 ./start_kharon.sh
 ```
@@ -105,8 +101,7 @@ chmod +x start_kharon.sh
 
 ```bash
 # E2E (requiere servicios corriendo en 8501 y 8080)
-source airflow_venv/bin/activate
-pytest tests/e2e/ -v
+uv run pytest tests/e2e/ -v
 ```
 
 ## Documentación

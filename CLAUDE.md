@@ -12,9 +12,10 @@ Script orchestration platform for Arkh-Ur. It wraps existing external scripts (n
 |---|---|
 | Orchestrator | Apache Airflow 3.x |
 | Webapp | Streamlit |
-| Language | Python 3.10+ |
+| Language | Python 3.11+ |
 | Config | YAML |
 | DB | SQLite (dev) / PostgreSQL (prod) |
+| Package Manager | uv |
 
 ## Commands
 
@@ -23,7 +24,7 @@ Script orchestration platform for Arkh-Ur. It wraps existing external scripts (n
 ./start_kharon.sh
 
 # Webapp only (Airflow must already be running)
-source airflow_venv/bin/activate
+source .venv/bin/activate
 cd webapp && streamlit run app.py --server.port 8501
 
 # Airflow services manually (each in separate terminal, venv active)
@@ -32,7 +33,7 @@ airflow scheduler
 airflow api-server --port 8080
 
 # E2E tests (requires running services on ports 8501 and 8080)
-source airflow_venv/bin/activate
+source .venv/bin/activate
 pytest tests/e2e/ -v
 pytest tests/e2e/test_webapp.py::test_name -v   # single test
 ```

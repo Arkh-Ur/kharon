@@ -13,6 +13,9 @@ airflow_venv/
 .venv/
 venv/
 
+# uv
+uv.lock
+
 # Airflow
 airflow_home/airflow.db
 airflow_home/airflow.db-shm

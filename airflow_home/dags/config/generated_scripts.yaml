@@ -1,11 +1,12 @@
 test:
   client_id: santa_elena
-  created_at: '2026-04-28T18:31:24.830967'
+  config_file: ''
+  created_at: '2026-04-28T23:02:01.416583'
   criticality: media
-  execution_mode: scheduled
+  execution_mode: on_demand
   python: bash
   retries: 2
-  schedule: 0 6 * * *
+  schedule: null
   script_id: test
   script_name: Test
   script_path: /home/hbuddenberg/developments/kharon/airflow_home/scripts_externos/test/test.sh
