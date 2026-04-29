@@ -71,10 +71,7 @@ _KHARON_CSS = """
 
     .stApp {
         background: radial-gradient(ellipse at 50% 0%, #131923 0%, #0A0F18 70%);
-    }
-    
-    .stApp, .stMarkdown, .stTextInput, .stSelectbox, .stTextArea {
-        font-family: 'DM Sans', sans-serif !important;
+        background-attachment: fixed;
     }
     h1, h2, h3 {
         font-family: 'Space Grotesk', sans-serif !important;
@@ -347,6 +344,13 @@ _KHARON_CSS = """
             height: 6px;
         }
         /* Summary bar scrollable */
+        /* Charts shorter on mobile */
+        .js-plotly-plot, .plotly {
+            height: 250px !important;
+        }
+        .stPlotlyChart {
+            height: auto !important;
+        }
         .kharon-summary-bar {
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
@@ -451,6 +455,61 @@ _KHARON_CSS = """
         background: rgba(107,114,128,0.06);
         border: 1px solid rgba(107,114,128,0.15);
         color: #6b7280;
+    }
+
+    .kharon-table-scroll {
+        max-height: 600px;
+        overflow-y: auto;
+        box-shadow: inset 0 -8px 8px -8px rgba(0,0,0,0.3);
+    }
+
+    /* ── Custom Scrollbar ──────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+    * { scrollbar-width: thin; scrollbar-color: #374151 #111827; }
+
+    /* ── Expander Polish ──────────────────────────────────── */
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] > div:first-child {
+        font-family: 'Space Grotesk', sans-serif !important;
+        color: #9ca3af !important;
+        font-size: 0.9em !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stExpander"] {
+        border: 1px solid rgba(255,255,255,0.04) !important;
+        border-radius: 10px !important;
+        background: rgba(17,24,39,0.3) !important;
+    }
+
+    /* ── Code Block Polish ─────────────────────────────────── */
+    code, pre, .stCode {
+        background: #0d1117 !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255,255,255,0.06) !important;
+    }
+    [data-testid="stCodeBlock"] {
+        border-radius: 10px !important;
+        border: 1px solid rgba(255,255,255,0.06) !important;
+    }
+    [data-testid="stCodeBlock"] pre {
+        background: #0d1117 !important;
+    }
+
+    /* ── Health Card Hover ─────────────────────────────────── */
+    [data-testid="stExpander"]:hover {
+        border-color: rgba(255,255,255,0.08) !important;
+    }
+
+    .kharon-client-pill {
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        cursor: default;
+    }
+    .kharon-client-pill:hover {
+        transform: scale(1.05);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
 </style>
 """
@@ -624,7 +683,11 @@ def _render_sidebar() -> None:
 
 def _page_dashboard() -> None:
     st.title("📊 Tablero")
-    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Vista general del estado de ejecuciones</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color:#6b7280;font-size:10px;letter-spacing:2px;text-transform:uppercase;"
+        "font-family:monospace;margin-top:-4px;'>DESCRIPTION</p>",
+        unsafe_allow_html=True,
+    )
 
     _PLOTLY_LAYOUT = {
         "paper_bgcolor": "#0A0F18",
@@ -747,7 +810,7 @@ def _page_dashboard() -> None:
                 unsafe_allow_html=True,
             )
 
-    st.divider()
+    st.markdown('<div style="height:1px;background:rgba(255,255,255,0.05);margin:12px 0;"></div>', unsafe_allow_html=True)
 
     all_runs.sort(
         key=lambda r: r.get("start_date") or r.get("logical_date") or "",
@@ -924,7 +987,11 @@ def _page_dashboard() -> None:
 
 def _page_processes() -> None:
     st.title("⚙️ Procesos")
-    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Gestión y monitoreo de scripts</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color:#6b7280;font-size:10px;letter-spacing:2px;text-transform:uppercase;"
+        "font-family:monospace;margin-top:-4px;'>DESCRIPTION</p>",
+        unsafe_allow_html=True,
+    )
 
     try:
         st_autorefresh = getattr(st, "autorefresh", None)
@@ -1289,6 +1356,11 @@ def _page_processes() -> None:
                 st.code(st.session_state[_log_key], language="log")
 
             if st.session_state.get(f"confirm_del_{dag_id}"):
+                st.markdown(
+                    '<div style="background:rgba(239,68,68,0.04);border:1px solid rgba(239,68,68,0.12);'
+                    'border-radius:12px;padding:12px 16px;margin:4px 0;">',
+                    unsafe_allow_html=True,
+                )
                 st.warning(f"⚠️ ¿Eliminar el proceso **{dag_id}**? Se borrará el DAG y su archivo. Esta acción no se puede deshacer.")
                 col_yes, col_no = st.columns(2)
                 with col_yes:
@@ -1314,13 +1386,18 @@ def _page_processes() -> None:
                     if st.button("Cancelar", key=f"del_no_{dag_id}"):
                         st.session_state.pop(f"confirm_del_{dag_id}", None)
                         st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ─── Page: Ver Logs ───────────────────────────────────────────────────────────
 
 def _page_view_logs() -> None:
     st.title("📄 Ver Logs")
-    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Exploración detallada de logs de ejecución</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color:#6b7280;font-size:10px;letter-spacing:2px;text-transform:uppercase;"
+        "font-family:monospace;margin-top:-4px;'>DESCRIPTION</p>",
+        unsafe_allow_html=True,
+    )
 
     try:
         client = _get_airflow_client()
@@ -1419,7 +1496,7 @@ def _page_view_logs() -> None:
 
     try_number = max(try_number, 1)
 
-    st.divider()
+    st.markdown('<div style="height:1px;background:rgba(255,255,255,0.05);margin:12px 0;"></div>', unsafe_allow_html=True)
 
     try:
         log_content = client.get_task_log(selected_dag, selected_run, selected_task, try_number)
@@ -1434,7 +1511,7 @@ def _page_global_monitoring() -> None:
     st.title("📡 Monitoreo Global")
     st.markdown(
         "<p style='color:#6b7280;font-size:10px;letter-spacing:2px;text-transform:uppercase;"
-        "font-family:monospace;margin-top:-4px;'>Seguimiento en tiempo real</p>",
+        "font-family:monospace;margin-top:-4px;'>DESCRIPTION</p>",
         unsafe_allow_html=True,
     )
 
@@ -1606,7 +1683,7 @@ def _page_global_monitoring() -> None:
 
     st.markdown(
         f'<div style="background:#111827;border-radius:12px;border:1px solid rgba(255,255,255,0.05);overflow:hidden;">'
-        f'<div style="max-height:600px;overflow-y:auto;">'
+        f'<div class="kharon-table-scroll">'
         f'<table class="kharon-monitor-table">'
         f'<thead><tr>'
         f'<th>Estado</th><th>Proceso</th><th>Cliente</th><th>Fecha</th><th>Tipo</th>'
@@ -1623,7 +1700,11 @@ def _page_global_monitoring() -> None:
 
 def _page_health_by_client() -> None:
     st.title("❤️ Salud por Cliente")
-    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Análisis de salud y rendimiento por cliente</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color:#6b7280;font-size:10px;letter-spacing:2px;text-transform:uppercase;"
+        "font-family:monospace;margin-top:-4px;'>DESCRIPTION</p>",
+        unsafe_allow_html=True,
+    )
 
     try:
         af = _get_airflow_client()
@@ -1757,7 +1838,11 @@ def _page_health_by_client() -> None:
 
 def _page_new_script() -> None:
     st.title("➕ Nuevo Script")
-    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Configurá un nuevo script en 5 pasos</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color:#6b7280;font-size:10px;letter-spacing:2px;text-transform:uppercase;"
+        "font-family:monospace;margin-top:-4px;'>DESCRIPTION</p>",
+        unsafe_allow_html=True,
+    )
 
     clients = _get_clients()
     if not clients:
@@ -1809,7 +1894,11 @@ def _page_new_script() -> None:
 
 def _page_configuration() -> None:
     st.title("⚙️ Configuración")
-    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Administración de clientes y parámetros del sistema</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color:#6b7280;font-size:10px;letter-spacing:2px;text-transform:uppercase;"
+        "font-family:monospace;margin-top:-4px;'>DESCRIPTION</p>",
+        unsafe_allow_html=True,
+    )
 
     col_config, col_health = st.columns(2)
 
@@ -1827,7 +1916,14 @@ def _page_configuration() -> None:
             "external_scripts_dir": str(config.EXTERNAL_SCRIPTS_DIR),
         }
         for key, val in env_info.items():
-            st.markdown(f"**{key}:** `{val}`")
+            st.markdown(
+                f'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;'
+                f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+                f'<span style="color:#6b7280;font-size:10px;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">{key}</span>'
+                f'<span style="color:#9ca3af;font-size:0.8em;font-family:monospace;word-break:break-all;max-width:60%;text-align:right;">{val}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
     with col_health:
         st.subheader("Estado de Airflow")
@@ -1867,7 +1963,7 @@ def _page_configuration() -> None:
 
             icon_html = _client_icon_html(c)
             tags_html += (
-                f'<span style="background-color:{bg};color:{color};'
+                f'<span class="kharon-client-pill" style="background-color:{bg};color:{color};'
                 f'padding:5px 14px;border-radius:14px;font-size:0.85em;'
                 f'font-weight:600;white-space:nowrap;display:inline-flex;'
                 f'align-items:center;gap:6px;">'
