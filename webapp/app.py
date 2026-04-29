@@ -145,6 +145,7 @@ _KHARON_CSS = """
         border: 1px solid var(--border-subtle);
         text-align: center;
         border-top: 2px solid var(--card-accent, #3b82f6);
+        min-height: 110px;
         transition: all 0.2s ease;
     }
     .metric-card:hover {
@@ -315,8 +316,8 @@ _KHARON_CSS = """
         }
         /* Sidebar mobile adjustments */
         [data-testid="stSidebar"] > div:first-child {
-            width: 260px !important;
-            max-width: 85vw !important;
+            width: 240px !important;
+            max-width: 70vw !important;
         }
         [data-testid="stSidebar"] .stButton > button,
         [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"],
@@ -337,6 +338,22 @@ _KHARON_CSS = """
         /* Status dot + label row */
         .kharon-process-header {
             flex-wrap: wrap;
+            line-height: 1.3;
+        }
+        .kharon-process-header span {
+            line-height: 1.3;
+        }
+        /* Monitor table mobile */
+        .kharon-monitor-table {
+            font-size: 0.78em;
+        }
+        .kharon-monitor-table thead th {
+            padding: 8px 8px;
+            font-size: 9px;
+            letter-spacing: 1px;
+        }
+        .kharon-monitor-table tbody td {
+            padding: 8px 8px;
         }
     }
     @media only screen and (max-width: 480px) {
@@ -347,6 +364,76 @@ _KHARON_CSS = """
             font-size: 0.9em !important;
             margin-bottom: 2px !important;
         }
+    }
+
+    /* ── Monitoring Table ─────────────────────────────────── */
+    .kharon-monitor-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.85em;
+    }
+    .kharon-monitor-table thead th {
+        font-family: monospace;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: #6b7280;
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        position: sticky;
+        top: 0;
+        background: #111827;
+        z-index: 1;
+    }
+    .kharon-monitor-table tbody tr {
+        transition: background 0.15s ease;
+    }
+    .kharon-monitor-table tbody tr:hover {
+        background: rgba(255,255,255,0.02);
+    }
+    .kharon-monitor-table tbody td {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        color: #9ca3af;
+        vertical-align: middle;
+    }
+    .kharon-monitor-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+    .kharon-monitor-table .dag-name {
+        font-weight: 600;
+        color: #e5e7eb;
+        font-size: 0.9em;
+    }
+    .kharon-monitor-table .client-id {
+        font-family: monospace;
+        font-size: 0.8em;
+        color: #6b7280;
+    }
+    .kharon-monitor-table .date-cell {
+        font-family: monospace;
+        font-size: 0.8em;
+        color: #9ca3af;
+    }
+    .kharon-monitor-table .type-badge {
+        font-family: monospace;
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 99;
+        white-space: nowrap;
+    }
+    .kharon-monitor-table .type-manual {
+        background: rgba(59,130,246,0.06);
+        border: 1px solid rgba(59,130,246,0.15);
+        color: #3b82f6;
+    }
+    .kharon-monitor-table .type-auto {
+        background: rgba(107,114,128,0.06);
+        border: 1px solid rgba(107,114,128,0.15);
+        color: #6b7280;
     }
 </style>
 """
@@ -435,6 +522,24 @@ def _status_dot_html(state: str) -> str:
         f'{pulse}{glow}'
         f'vertical-align:middle;margin-right:6px;'
         f'"></span>'
+    )
+
+
+def _badge_label_html(state: str) -> str:
+    """Compact status label for table rows."""
+    labels = {
+        "success": "Exitosa", "failed": "Fallida",
+        "running": "Ejecutando", "queued": "En cola",
+    }
+    colors = {
+        "success": "#22c55e", "failed": "#ef4444",
+        "running": "#3b82f6", "queued": "#f59e0b",
+    }
+    color = colors.get(state, "#545B67")
+    label = labels.get(state, state)
+    return (
+        f'<span style="font-family:monospace;font-size:10px;color:{color};'
+        f'vertical-align:middle;">{label}</span>'
     )
 
 
@@ -1176,7 +1281,11 @@ def _page_view_logs() -> None:
 
 def _page_global_monitoring() -> None:
     st.title("📡 Monitoreo Global")
-    st.markdown("<p style='color:#9ca3af;font-size:0.9em;margin-top:-8px;'>Seguimiento en tiempo real de todas las ejecuciones</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color:#6b7280;font-size:10px;letter-spacing:2px;text-transform:uppercase;"
+        "font-family:monospace;margin-top:-4px;'>Seguimiento en tiempo real</p>",
+        unsafe_allow_html=True,
+    )
 
     try:
         af = _get_airflow_client()
@@ -1207,6 +1316,11 @@ def _page_global_monitoring() -> None:
     all_runs = all_runs[:200]
 
     # ── Filtros ──────────────────────────────────────────────────────────────────
+    st.markdown(
+        '<div style="background:#111827;border-radius:12px;border:1px solid rgba(255,255,255,0.05);padding:12px 16px;margin:12px 0;">'
+        '<div style="font-family:monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#6b7280;margin-bottom:8px;font-weight:700;">Filtros</div>',
+        unsafe_allow_html=True,
+    )
     col_status, col_type, col_client, col_date = st.columns(4)
     with col_status:
         status_filter = st.selectbox(
@@ -1227,6 +1341,8 @@ def _page_global_monitoring() -> None:
         days_back = st.number_input(
             "Últimos N días", min_value=1, max_value=90, value=7, key="mon_days"
         )
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     cutoff = datetime.now().astimezone() - timedelta(days=days_back)
 
@@ -1288,41 +1404,68 @@ def _page_global_monitoring() -> None:
                 unsafe_allow_html=True,
             )
 
-    st.divider()
-    st.subheader(f"Ejecuciones ({total_f} resultados)")
+    st.markdown(
+        '<div style="height:1px;background:rgba(255,255,255,0.06);margin:24px 0 16px 0;"></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
+        f'<span style="font-size:1.1em;font-weight:600;color:#e5e7eb;">Ejecuciones</span>'
+        f'<span style="font-family:monospace;font-size:10px;padding:2px 8px;border-radius:99;'
+        f'background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.2);color:#3b82f6;">{total_f}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     if not filtered:
         st.info("No hay ejecuciones que coincidan con los filtros.")
         return
 
+    # Build HTML table
+    _table_rows = []
     for run in filtered[:50]:
-        col_state, col_dag, col_client_col, col_date_col, col_type_col = st.columns([1, 2, 1, 2, 1])
-
-        with col_state:
-            render_status_badge(run.get("state", "unknown"))
-
-        with col_dag:
-            st.markdown(f"**{run.get('dag_id', '—')}**")
-
-        with col_client_col:
-            cid = run.get("_client_id", "")
-            st.caption(cid or "—")
-
-        with col_date_col:
-            date_str = _dag_run_date(run)
+        _state = run.get("state", "unknown")
+        _dag_id = run.get("dag_id", "—")
+        _client_id = run.get("_client_id", "") or "—"
+        
+        _date_str = _dag_run_date(run)
+        _date_display = "—"
+        if _date_str:
             try:
-                dt = datetime.fromisoformat(str(date_str).replace("Z", "+00:00"))
-                st.caption(dt.strftime("%d/%m/%Y %H:%M"))
+                _dt = datetime.fromisoformat(str(_date_str).replace("Z", "+00:00"))
+                _date_display = _dt.strftime("%d/%m/%Y %H:%M")
             except (ValueError, TypeError):
-                st.caption(str(date_str) if date_str else "—")
+                _date_display = str(_date_str)
 
-        with col_type_col:
-            run_type = run.get("run_type", "")
-            conf = run.get("conf") or {}
-            if run_type == "manual" or conf.get("triggered_from") == "kharon":
-                st.caption("🔘 Manual")
-            else:
-                st.caption("⏰ Auto")
+        _run_type = run.get("run_type", "")
+        _conf = run.get("conf") or {}
+        _is_manual = _run_type == "manual" or _conf.get("triggered_from") == "kharon"
+        _type_class = "type-manual" if _is_manual else "type-auto"
+        _type_label = "Manual" if _is_manual else "Auto"
+
+        _table_rows.append(
+            f'<tr>'
+            f'<td>{_status_dot_html(_state)}{_badge_label_html(_state)}</td>'
+            f'<td><span class="dag-name">{_dag_id}</span></td>'
+            f'<td><span class="client-id">{_client_id}</span></td>'
+            f'<td><span class="date-cell">{_date_display}</span></td>'
+            f'<td><span class="type-badge {_type_class}">{_type_label}</span></td>'
+            f'</tr>'
+        )
+
+    st.markdown(
+        f'<div style="background:#111827;border-radius:12px;border:1px solid rgba(255,255,255,0.05);overflow:hidden;">'
+        f'<div style="max-height:600px;overflow-y:auto;">'
+        f'<table class="kharon-monitor-table">'
+        f'<thead><tr>'
+        f'<th>Estado</th><th>Proceso</th><th>Cliente</th><th>Fecha</th><th>Tipo</th>'
+        f'</tr></thead>'
+        f'<tbody>{"".join(_table_rows)}</tbody>'
+        f'</table>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ─── Page 5: Salud por Cliente ────────────────────────────────────────────────
@@ -1541,9 +1684,17 @@ def _page_configuration() -> None:
             health = client.health_check()
             metadatabase = health.get("metadatabase", {})
             scheduler = health.get("scheduler", {})
-            st.markdown(f"**Metadatabase:** {metadatabase.get('status', '—')}")
-            st.markdown(f"**Scheduler:** {scheduler.get('status', '—')}")
-            st.markdown(f"**Último heartbeat:** {scheduler.get('latest_scheduler_heartbeat', '—')}")
+            st.markdown(
+                f'<div style="padding:8px 0;">'
+                f'<div style="margin-bottom:6px;"><span style="color:#6b7280;font-size:10px;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">Metadatabase</span><br/>'
+                f'<span style="color:#e5e7eb;font-weight:500;">{metadatabase.get("status", "—")}</span></div>'
+                f'<div style="margin-bottom:6px;"><span style="color:#6b7280;font-size:10px;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">Scheduler</span><br/>'
+                f'<span style="color:#e5e7eb;font-weight:500;">{scheduler.get("status", "—")}</span></div>'
+                f'<div><span style="color:#6b7280;font-size:10px;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">Último heartbeat</span><br/>'
+                f'<span style="color:#9ca3af;font-family:monospace;font-size:0.85em;">{scheduler.get("latest_scheduler_heartbeat", "—")}</span></div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
         except AirflowClientError as e:
             st.error(f"Airflow no disponible: {e}")
 
