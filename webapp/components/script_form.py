@@ -189,6 +189,12 @@ def _step_script_config() -> Optional[Dict]:
         value=st.session_state.form_data.get("retries", 2),
         key="sf_retries",
     )
+    config_file = st.text_input(
+        "Archivo de configuración (opcional)",
+        value=st.session_state.form_data.get("config_file", ""),
+        key="sf_config_file",
+        placeholder="/ruta/al/config.yaml",
+    ).strip()
 
     if script_path and script_path.startswith("~"):
         script_path = os.path.expanduser(script_path)
@@ -215,6 +221,7 @@ def _step_script_config() -> Optional[Dict]:
             "interpreter": interpreter,
             "timeout": timeout,
             "retries": retries,
+            "config_file": config_file,
         })
 
     _nav_buttons(can_continue, "config")
@@ -369,6 +376,7 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
         ("🔴 Criticalidad", fd.get('criticality', '—')),
         ("🔧 Intérprete", fd.get('interpreter', '—')),
         ("📂 Ruta", fd.get('script_path', '—')),
+        ("📄 Config", fd.get('config_file') or '—'),
         ("🏢 Cliente", fd.get('client', '—')),
         ("⏱ Modo", mode_display.get(fd.get('execution_mode', ''), '—')),
         ("🏷 Tags", ', '.join(fd.get('tags', [])) or '—'),

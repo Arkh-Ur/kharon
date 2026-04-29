@@ -1025,6 +1025,22 @@ def _page_processes() -> None:
             runs = []
 
         last_state = runs[0].get("state", "never") if runs else "never"
+        # Build mode pill
+        _mode_pill_colors = {
+            "on_demand": "#6b7280",
+            "continuous": "#3b82f6", 
+            "scheduled": "#f59e0b",
+        }
+        _mode_pill_labels = {
+            "on_demand": "Demanda",
+            "continuous": "Continuo",
+            "scheduled": "Agendado",
+        }
+        _registry_meta = _get_dag_generator()._load_registry().get(dag_id, {})
+        _reg_mode = _registry_meta.get("execution_mode", "on_demand")
+        _pill_color = _mode_pill_colors.get(_reg_mode, "#6b7280")
+        _pill_label = _mode_pill_labels.get(_reg_mode, "Demanda")
+        
         # CSS-based status dot above the expander
         st.markdown(
             f'<div class="kharon-process-header" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;'
@@ -1032,6 +1048,10 @@ def _page_processes() -> None:
             f'{_status_dot_html(last_state)}'
             f'<span style="font-weight:600;color:#e5e7eb;">{desc}</span> '
             f'<span style="color:#6b7280;font-size:0.8em;font-family:monospace;">{mode}</span>'
+            f'<span style="font-family:monospace;font-size:10px;padding:2px 8px;'
+            f'border-radius:99;background:rgba({_hex_to_rgb(_pill_color)},.06);'
+            f'border:1px solid rgba({_hex_to_rgb(_pill_color)},.2);color:{_pill_color};'
+            f'white-space:nowrap;">{_pill_label}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -1100,8 +1120,6 @@ def _page_processes() -> None:
             else:
                 st.info("Sin ejecuciones previas.")
 
-            col_exec, col_log, col_del = st.columns(3)
-
             with col_exec:
                 if st.button("▶ Ejecutar", key=f"exec_{dag_id}", use_container_width=True):
                     try:
@@ -1138,6 +1156,124 @@ def _page_processes() -> None:
                         except Exception as exc:
                             st.session_state[_log_key] = f"Error al obtener log: {exc}"
 
+            with col_cfg:
+                # ── Config File Viewer/Editor ──
+                _registry = _get_dag_generator()._load_registry()
+                _script_meta = _registry.get(dag_id, {})
+                _config_path = _script_meta.get("config_file")
+                
+                if _config_path:
+                    _config_key = f"config_edit_{dag_id}"
+                    _config_show_key = f"config_show_{dag_id}"
+                    
+                    if st.button("📄 Ver Config", key=f"cfg_{dag_id}", use_container_width=False):
+                        st.session_state[_config_show_key] = not st.session_state.get(_config_show_key, False)
+                    
+                    if st.session_state.get(_config_show_key, False):
+                        if os.path.isfile(_config_path):
+                            try:
+                                with open(_config_path, "r") as f:
+                                    _config_content = f.read()
+                                st.markdown(
+                                    f'<div style="font-family:monospace;font-size:10px;color:#6b7280;'
+                                    f'letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">'
+                                    f'{_config_path}</div>',
+                                    unsafe_allow_html=True,
+                                )
+                                _edited = st.text_area(
+                                    "Contenido",
+                                    value=_config_content,
+                                    key=_config_key,
+                                    height=250,
+                                    label_visibility="collapsed",
+                                )
+                                _col_save, _col_cancel = st.columns(2)
+                                with _col_save:
+                                    if st.button("💾 Guardar", key=f"cfg_save_{dag_id}"):
+                                        try:
+                                            with open(_config_path, "w") as f:
+                                                f.write(_edited)
+                                            st.success("✅ Configuración guardada")
+                                        except Exception as e:
+                                            st.error(f"Error al guardar: {e}")
+                                with _col_cancel:
+                                    if st.button("✕ Cerrar", key=f"cfg_close_{dag_id}"):
+                                        st.session_state[_config_show_key] = False
+                                        st.rerun()
+                            except Exception as e:
+                                st.error(f"Error al leer config: {e}")
+                        else:
+                            st.warning(f"⚠️ Archivo no encontrado: {_config_path}")
+
+            with col_mode:
+                # ── Execution Mode Switcher ──
+                _registry = _get_dag_generator()._load_registry()
+                _script_meta = _registry.get(dag_id, {})
+                _current_mode = _script_meta.get("execution_mode", "on_demand")
+                
+                _mode_key = f"mode_{dag_id}"
+                if _mode_key not in st.session_state:
+                    st.session_state[_mode_key] = _current_mode
+                
+                _mode_options = ["on_demand", "continuous", "scheduled"]
+                _mode_labels = {
+                    "on_demand": "🎯 Demanda",
+                    "continuous": "🔄 Continuo",
+                    "scheduled": "📅 Agendado",
+                }
+                
+                _new_mode = st.selectbox(
+                    "Modo",
+                    options=_mode_options,
+                    index=_mode_options.index(st.session_state[_mode_key]),
+                    format_func=lambda x: _mode_labels.get(x, x),
+                    key=f"mode_sb_{dag_id}",
+                    label_visibility="collapsed",
+                )
+                st.session_state[_mode_key] = _new_mode
+                
+                _schedule_val = None
+                if _new_mode == "scheduled":
+                    _sched_key = f"sched_{dag_id}"
+                    _current_sched = _script_meta.get("schedule", "0 6 * * *")
+                    if _sched_key not in st.session_state:
+                        st.session_state[_sched_key] = _current_sched
+                    _schedule_val = st.text_input(
+                        "Cron",
+                        value=st.session_state[_sched_key],
+                        key=f"cron_{dag_id}",
+                        placeholder="0 6 * * *",
+                        label_visibility="collapsed",
+                    )
+                    st.session_state[_sched_key] = _schedule_val
+                
+                if _new_mode != _current_mode or (_new_mode == "scheduled" and _schedule_val != _script_meta.get("schedule")):
+                    if st.button("✓ Aplicar", key=f"apply_mode_{dag_id}"):
+                        try:
+                            generator = _get_dag_generator()
+                            gen_result = generator.update_execution_mode(
+                                script_id=dag_id,
+                                execution_mode=_new_mode,
+                                schedule=_schedule_val,
+                            )
+                            if gen_result.success:
+                                # Pause/unpause logic
+                                af_client = _get_airflow_client()
+                                if _new_mode == "on_demand":
+                                    af_client.pause_dag(dag_id, paused=True)
+                                else:
+                                    af_client.pause_dag(dag_id, paused=False)
+                                st.toast(f"✅ Modo actualizado: {_mode_labels.get(_new_mode, _new_mode)}")
+                                st.rerun()
+                            else:
+                                st.error(f"Error: {', '.join(gen_result.errors)}")
+                        except Exception as e:
+                            st.error(f"Error al actualizar modo: {e}")
+
+            with col_del:
+                if st.button("🗑 Eliminar", key=f"del_{dag_id}", use_container_width=True):
+                    st.session_state[f"confirm_del_{dag_id}"] = True
+
             # Log persiste entre reruns usando session_state — se muestra en ancho completo
             _log_key = f"log_data_{dag_id}"
             if _log_key in st.session_state:
@@ -1150,9 +1286,7 @@ def _page_processes() -> None:
                         st.rerun()
                 st.code(st.session_state[_log_key], language="log")
 
-            with col_del:
-                if st.button("🗑 Eliminar", key=f"del_{dag_id}", use_container_width=True):
-                    st.session_state[f"confirm_del_{dag_id}"] = True
+            col_exec, col_log, col_cfg, col_mode, col_del = st.columns([1, 1, 1, 1.2, 1])
 
             if st.session_state.get(f"confirm_del_{dag_id}"):
                 st.warning(f"⚠️ ¿Eliminar el proceso **{dag_id}**? Se borrará el DAG y su archivo. Esta acción no se puede deshacer.")
@@ -1659,6 +1793,7 @@ def _page_new_script() -> None:
                     tags=result.get("tags", []),
                     python="python3" if result.get("interpreter") == "python" else "bash",
                     execution_mode=result.get("execution_mode", "scheduled"),
+                    config_file=result.get("config_file"),
                 )
                 if gen_result.success:
                     st.success(f"✅ Script **{result.get('name', '')}** creado exitosamente.")

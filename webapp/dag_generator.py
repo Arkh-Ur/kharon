@@ -58,7 +58,8 @@ class DAGGenerator:
         criticality: str = "medium",
         tags: Optional[List[str]] = None,
         python: str = "python3",
-        execution_mode: str = "scheduled"
+        execution_mode: str = "scheduled",
+        config_file: Optional[str] = None
     ) -> DAGGenerationResult:
         """Generate a DAG file from script metadata.
         
@@ -117,7 +118,8 @@ class DAGGenerator:
                 criticality,
                 tags,
                 python,
-                execution_mode
+                execution_mode,
+                config_file
             )
             
             # Write DAG file
@@ -137,12 +139,81 @@ class DAGGenerator:
                 "tags": tags or [],
                 "python": python,
                 "execution_mode": execution_mode,
+                "config_file": config_file,
                 "created_at": datetime.now().isoformat()
             }
             self._update_registry(registry_entry)
             
             result.success = True
             result.dag_id = sanitized_script_id
+            result.file_path = str(dag_file_path)
+            
+            return result
+            
+        except Exception as e:
+            result.errors.append(f"Unexpected error: {str(e)}")
+            return result
+    
+    def update_execution_mode(
+        self,
+        script_id: str,
+        execution_mode: str,
+        schedule: Optional[str] = None,
+    ) -> DAGGenerationResult:
+        """Update execution mode for an existing DAG.
+        
+        Regenerates the DAG file with new schedule and updates registry.
+        
+        Args:
+            script_id: Script identifier
+            execution_mode: New execution mode (on_demand, continuous, scheduled)
+            schedule: Cron expression (required if mode is 'scheduled')
+            
+        Returns:
+            DAGGenerationResult with operation status
+        """
+        result = DAGGenerationResult(success=False)
+        
+        try:
+            registry_data = self._load_registry()
+            
+            if script_id not in registry_data:
+                result.errors.append(f"Script not found in registry: {script_id}")
+                return result
+            
+            entry = registry_data[script_id]
+            
+            entry["execution_mode"] = execution_mode
+            entry["schedule"] = schedule if execution_mode == "scheduled" else None
+            
+            script_file = Path(entry["script_path"])
+            if not script_file.exists():
+                pass
+            
+            dag_content = self._generate_dag_content(
+                dag_id=script_id,
+                script_name=entry.get("script_name", script_id),
+                script_file=script_file,
+                client_id=entry.get("client_id", ""),
+                timeout=entry.get("timeout", 3600),
+                retries=entry.get("retries", 2),
+                schedule=entry["schedule"],
+                criticality=entry.get("criticality", "media"),
+                tags=entry.get("tags", []),
+                python=entry.get("python", "python3"),
+                execution_mode=execution_mode,
+                config_file=entry.get("config_file"),
+            )
+            
+            dag_file_path = self.dags_dir / f"{script_id}.py"
+            with open(dag_file_path, 'w', encoding='utf-8') as f:
+                f.write(dag_content)
+            
+            registry_data[script_id] = entry
+            self._save_registry(registry_data)
+            
+            result.success = True
+            result.dag_id = script_id
             result.file_path = str(dag_file_path)
             
             return result
@@ -194,7 +265,8 @@ class DAGGenerator:
         criticality: str,
         tags: Optional[List[str]],
         python: str,
-        execution_mode: str
+        execution_mode: str,
+        config_file: Optional[str] = None
     ) -> str:
         """Generate complete DAG file content.
         
@@ -261,14 +333,16 @@ dag = DAG(
     catchup=False,
 )
 
-{dag_id}_task = KharonOperator(
-    task_id='execute_{dag_id}',
-    script_path={str(script_file)!r},
-    script_id='{dag_id}',
-    client_id='{client_id}',
-    timeout={timeout},
-    dag=dag,
-)
+    config_arg = f",\n    args=['--config', {str(Path(config_file))!r}]" if config_file else ""
+    
+    {dag_id}_task = KharonOperator(
+        task_id='execute_{dag_id}',
+        script_path={str(script_file)!r},
+        script_id='{dag_id}',
+        client_id='{client_id}',
+        timeout={timeout},{config_arg}
+        dag=dag,
+    )
 '''
         
         return dag_content.strip()
