@@ -306,6 +306,11 @@ class DAGGenerator:
         schedule_str = "None" if schedule_param is None else repr(schedule_param)
         max_active = "\n    max_active_runs=1," if execution_mode == "continuous" else ""
         
+        if config_file:
+            config_arg = f"\n    args=['--config', {str(config_file)!r}],"
+        else:
+            config_arg = ""
+        
         dag_content = f'''"""
 Generated DAG for {script_name}
 Script ID: {dag_id}
@@ -337,18 +342,14 @@ dag = DAG(
     catchup=False,
 )
 
-    config_arg = f",\n    args=['--config', {str(Path(config_file))!r}]" if config_file else ""
-    if not script_file:
-        raise ValueError(f"script_file is required but got: {script_file}")
-    
-    {dag_id}_task = KharonOperator(
-        task_id='execute_{dag_id}',
-        script_path={str(script_file)!r},
-        script_id='{dag_id}',
-        client_id='{client_id}',
-        timeout={timeout},{config_arg}
-        dag=dag,
-    )
+{dag_id}_task = KharonOperator(
+    task_id='execute_{dag_id}',
+    script_path={str(script_file)!r},
+    script_id='{dag_id}',
+    client_id='{client_id}',
+    timeout={timeout},{config_arg}
+    dag=dag,
+)
 '''
         
         return dag_content.strip()
