@@ -792,14 +792,38 @@ def _page_dashboard() -> None:
     avg_min = int(avg_duration_seconds // 60)
     avg_sec = int(avg_duration_seconds % 60)
 
-    col1, col2, col3, col4 = st.columns(4)
-    _metric_data = [
-        (col1, f"{total_scripts}", "Total Scripts", "#3b82f6", "📦"),
-        (col2, f"{running_count}", "En Ejecución", "#3b82f6", "⚡"),
-        (col3, f"{success_rate:.1f}%", "Tasa de Éxito", "#22c55e", "✅"),
-        (col4, f"{avg_min}m {avg_sec}s", "Duración Prom.", "#f59e0b", "⏱"),
+    row1_col1, row1_col2 = st.columns(2)
+    _metric_data_row1 = [
+        (row1_col1, f"{total_scripts}", "Total Scripts", "#3b82f6", "📦"),
+        (row1_col2, f"{running_count}", "En Ejecución", "#3b82f6", "⚡"),
     ]
-    for col, value, label, color, icon in _metric_data:
+    for col, value, label, color, icon in _metric_data_row1:
+        with col:
+            st.markdown(
+                f'<div class="metric-card" style="--card-accent:{color};--card-accent-rgb:{_hex_to_rgb(color)};">'
+                f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
+                f'<div class="metric-value" style="color:{color}">{value}</div>'
+                f'<div class="metric-label">{label}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    
+    st.markdown('<div style="height:1px;background:rgba(255,255,255,0.05);margin:12px 0;"></div>', unsafe_allow_html=True)
+    row2_col1, row2_col2 = st.columns(2)
+    _metric_data_row2 = [
+        (row2_col1, f"{success_rate:.1f}%", "Tasa de Éxito", "#22c55e", "✅"),
+        (row2_col2, f"{avg_min}m {avg_sec}s", "Duración Prom.", "#f59e0b", "⏱"),
+    ]
+    for col, value, label, color, icon in _metric_data_row2:
+        with col:
+            st.markdown(
+                f'<div class="metric-card" style="--card-accent:{color};--card-accent-rgb:{_hex_to_rgb(color)};">'
+                f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
+                f'<div class="metric-value" style="color:{color}">{value}</div>'
+                f'<div class="metric-label">{label}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
         with col:
             st.markdown(
                 f'<div class="metric-card" style="--card-accent:{color};--card-accent-rgb:{_hex_to_rgb(color)};">'
@@ -1008,6 +1032,12 @@ def _page_processes() -> None:
     client_names = ["Todos"] + list(client_options.keys())
     selected_client = st.selectbox("🏢 Filtrar por cliente", client_names, key="proc_client_filter")
 
+    search_term = st.text_input(
+        "🔍 Buscar proceso", 
+        placeholder="nombre, cliente, modo...", 
+        key="proc_search"
+    ).strip()
+
     try:
         client = _get_airflow_client()
         all_dags = client.list_dags(limit=200)
@@ -1026,6 +1056,24 @@ def _page_processes() -> None:
         for dag in kharon_dags:
             tags = [t.get("name", "") for t in dag.get("tags", [])]
             if f"client_{selected_client_id}" in tags:
+                filtered_dags.append(dag)
+        kharon_dags = filtered_dags
+
+    if search_term:
+        search_lower = search_term.lower()
+        filtered_dags = []
+        for dag in kharon_dags:
+            dag_id = dag.get("dag_id", "").lower()
+            description = (dag.get("description", "") or "").lower()
+            tags = [t.get("name", "").lower() for t in dag.get("tags", [])]
+            
+            matches = (
+                search_lower in dag_id or
+                search_lower in description or
+                any(search_lower in tag for tag in tags) or
+                _get_dag_generator()._load_registry().get(dag.get("dag_id", ""), {}).get("execution_mode", "").lower() == search_lower
+            )
+            if matches:
                 filtered_dags.append(dag)
         kharon_dags = filtered_dags
 
@@ -1069,7 +1117,9 @@ def _page_processes() -> None:
             }
             _pill = _mode_pill_labels.get(_p_mode, "Demanda")
             _pill_c = _mode_pill_colors.get(_p_mode, "#6b7280")
-            st.markdown(
+            col_content, col_buttons = st.columns([100, 1])
+            with col_content:
+                st.markdown(
                 f'<div style="background:#111827;border:1px solid rgba(245,158,11,0.15);'
                 f'border-radius:12px;padding:14px 18px;margin-bottom:8px;'
                 f'display:flex;align-items:center;gap:12px;">'
@@ -1095,6 +1145,17 @@ def _page_processes() -> None:
                 f'</div>',
                 unsafe_allow_html=True,
             )
+            with col_buttons:
+                col_del, col_ref = st.columns([1, 1])
+                with col_del:
+                    if st.button("🗑", key=f"del_pending_{_sid}", use_container_width=True):
+                        generator = _get_dag_generator()
+                        if generator.delete_dag(_sid):
+                            st.toast(f"🗑 {_p_name} eliminado", icon="✅")
+                        st.rerun()
+                with col_ref:
+                    if st.button("🔄", key=f"ref_pending_{_sid}", use_container_width=True):
+                        st.rerun()
 
     if not kharon_dags and not _pending:
         st.info("No hay procesos para el cliente seleccionado.")
@@ -1175,16 +1236,27 @@ def _page_processes() -> None:
         _pill_label = _mode_pill_labels.get(_reg_mode, "Demanda")
         
         # CSS-based status dot above the expander
-        st.markdown(
-            f'<div class="kharon-process-header" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;'
-            f'padding:8px 0 4px;border-bottom:1px solid rgba(255,255,255,0.04);">'
-            f'{_status_dot_html(last_state)}'
-            f'<span style="font-weight:600;color:#e5e7eb;">{desc}</span> '
-            f'<span style="color:#6b7280;font-size:0.8em;font-family:monospace;">{mode}</span>'
+        header_parts = [
+            f'{_status_dot_html(last_state)}',
+            f'<span style="font-weight:600;color:#e5e7eb;">{desc}</span> ',
+            f'<span style="color:#6b7280;font-size:0.8em;font-family:monospace;">{mode}</span>',
             f'<span style="font-family:monospace;font-size:10px;padding:2px 8px;'
             f'border-radius:99;background:rgba({_hex_to_rgb(_pill_color)},.06);'
             f'border:1px solid rgba({_hex_to_rgb(_pill_color)},.2);color:{_pill_color};'
             f'white-space:nowrap;">{_pill_label}</span>'
+        ]
+        
+        project_path = _registry_meta.get("project_path")
+        if project_path:
+            header_parts.append(
+                f'<span style="color:#4b5563;font-size:0.7em;font-family:monospace;">'
+                f'📁 {project_path}</span>'
+            )
+        
+        st.markdown(
+            f'<div class="kharon-process-header" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;'
+            f'padding:8px 0 4px;border-bottom:1px solid rgba(255,255,255,0.04);">'
+            f'{" ".join(header_parts)}'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -1935,10 +2007,17 @@ def _page_new_script() -> None:
         with st.spinner("Generando DAG..."):
             try:
                 generator = _get_dag_generator()
+                script_id = generator._build_dag_id(
+                    client_id=result.get("client_id", result.get("client", "")),
+                    script_name=result.get("name", "")
+                )
+                _project_path = result.get("project_path", "")
+                _script_rel = result.get("script_path", "")
+                _full_script = os.path.join(_project_path, _script_rel) if _project_path and not os.path.isabs(_script_rel) else _script_rel
                 gen_result = generator.generate_dag(
-                    script_id=result.get("name", "").replace(" ", "_").lower(),
+                    script_id=script_id,
                     script_name=result.get("name", ""),
-                    script_path=result.get("script_path", ""),
+                    script_path=_full_script,
                     client_id=result.get("client_id", result.get("client", "")),
                     timeout=result.get("timeout", 3600),
                     retries=result.get("retries", 2),
@@ -1946,8 +2025,9 @@ def _page_new_script() -> None:
                     criticality=result.get("criticality", "media"),
                     tags=result.get("tags", []),
                     python="python3" if result.get("interpreter") == "python" else "bash",
-                    execution_mode=result.get("execution_mode", "scheduled"),
+                    execution_mode=result.get("execution_mode", "on_demand"),
                     config_file=result.get("config_file"),
+                    project_path=result.get("project_path"),
                 )
                 if gen_result.success:
                     st.toast(f"🎉 {result.get('name', '')} creado — redirigiendo a Procesos…", icon="✅")

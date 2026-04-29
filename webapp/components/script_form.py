@@ -162,12 +162,48 @@ def _step_basic_info(existing_scripts: List[dict]) -> Optional[Dict]:
 
 
 def _step_script_config() -> Optional[Dict]:
-    script_path = st.text_input(
-        "Ruta del Script *",
-        value=st.session_state.form_data.get("script_path", ""),
-        key="sf_script_path",
-        placeholder="/ruta/al/script.sh",
-    ).strip()
+    project_path = st.session_state.form_data.get("project_path", "")
+    script_path = st.session_state.form_data.get("script_path", "")
+    
+    col_proj, col_browse = st.columns([3, 1])
+    with col_proj:
+        project_path = st.text_input(
+            "Ruta del Proyecto *",
+            value=project_path,
+            key="sf_project_path",
+            placeholder="/ruta/al/proyecto",
+        ).strip()
+    with col_browse:
+        if st.button("📂 Explorar", key="sf_browse_project"):
+            if "browse_root" not in st.session_state:
+                st.session_state.browse_root = os.path.expanduser("~")
+    
+    if "browse_root" in st.session_state:
+        _render_file_browser()
+    
+    col_script, col_script_browse = st.columns([3, 1])
+    with col_script:
+        script_path = st.text_input(
+            "Script Principal *",
+            value=script_path,
+            key="sf_script_path",
+            placeholder="scripts/run_etl.sh (relativo al proyecto)",
+        ).strip()
+    with col_script_browse:
+        if project_path and os.path.isdir(project_path) and st.button("📂 Explorar", key="sf_browse_script"):
+            st.session_state.browse_root = project_path
+            st.session_state._script_browse_mode = True
+            st.rerun()
+    
+    if script_path:
+        if os.path.isabs(script_path):
+            if os.path.isfile(script_path):
+                project_path = os.path.dirname(script_path)
+                script_path = os.path.basename(script_path)
+                st.info(f"📁 Ruta detectada: proyecto='{project_path}', script='{script_path}'")
+            else:
+                st.warning(f"⚠️ El archivo no existe: {script_path}")
+    
     interpreter = st.selectbox(
         "Intérprete",
         options=["bash", "python", "sh"],
@@ -196,27 +232,27 @@ def _step_script_config() -> Optional[Dict]:
         placeholder="/ruta/al/config.yaml",
     ).strip()
 
-    if script_path and script_path.startswith("~"):
-        script_path = os.path.expanduser(script_path)
-
     can_continue = False
-    if script_path and not os.path.isabs(script_path):
-        st.info("Usá una ruta absoluta para el script.")
-    elif script_path and os.path.isfile(script_path):
-        st.success(f"✅ Script encontrado: {script_path}")
-        can_continue = True
-        with st.expander("Vista previa del script"):
-            try:
-                with open(script_path, "r") as f:
-                    preview = f.read(5000)
-                st.code(preview, language=interpreter)
-            except Exception:
-                st.warning("No se pudo leer el archivo.")
-    elif script_path:
-        st.warning(f"⚠️ El archivo no existe: {script_path}")
+    if project_path and script_path:
+        full_script_path = os.path.join(project_path, script_path)
+        if os.path.isfile(full_script_path):
+            st.success(f"✅ Script encontrado: {full_script_path}")
+            can_continue = True
+            with st.expander("Vista previa del script"):
+                try:
+                    with open(full_script_path, "r") as f:
+                        preview = f.read(5000)
+                    st.code(preview, language=interpreter)
+                except Exception:
+                    st.warning("No se pudo leer el archivo.")
+        elif not os.path.isdir(project_path):
+            st.warning(f"⚠️ El directorio del proyecto no existe: {project_path}")
+        else:
+            st.warning(f"⚠️ El script no existe en el proyecto: {script_path}")
 
     if can_continue:
         st.session_state.form_data.update({
+            "project_path": project_path,
             "script_path": script_path,
             "interpreter": interpreter,
             "timeout": timeout,
@@ -226,6 +262,60 @@ def _step_script_config() -> Optional[Dict]:
 
     _nav_buttons(can_continue, "config")
     return None
+
+
+def _render_file_browser() -> None:
+    """Render inline file browser for project/script selection."""
+    browse_root = st.session_state.browse_root
+    is_script_browse = getattr(st.session_state, "_script_browse_mode", False)
+    
+    with st.expander("📂 Explorar", expanded=True):
+        st.text_input("Ruta base", value=browse_root, key="browse_root_input")
+        
+        current_root = st.session_state.browse_root_input
+        
+        if os.path.isdir(current_root):
+            entries = sorted(os.listdir(current_root))
+            dirs = [e for e in entries if os.path.isdir(os.path.join(current_root, e)) and not e.startswith('.')]
+            files = [e for e in entries if os.path.isfile(os.path.join(current_root, e)) and e.endswith(('.py', '.sh', '.bash'))]
+            
+            if dirs:
+                selected = st.radio(
+                    "Directorios", 
+                    ["./ (seleccionar esta carpeta)"] + dirs, 
+                    key="browse_dirs", 
+                    label_visibility="collapsed"
+                )
+                if selected != "./ (seleccionar esta carpeta)" and selected:
+                    if st.button("Abrir " + selected, key="browse_open"):
+                        st.session_state.browse_root = os.path.join(current_root, selected)
+                        st.rerun()
+            
+            if files and not is_script_browse:
+                picked = st.radio("Archivos", files, key="browse_files")
+                if st.button("Seleccionar como script", key="select_script"):
+                    if "sf_project_path" in st.session_state:
+                        project_path = st.session_state.sf_project_path
+                        if project_path and os.path.exists(project_path):
+                            relative_path = os.path.relpath(os.path.join(current_root, picked), project_path)
+                            st.session_state.sf_script_path = relative_path
+                        else:
+                            st.session_state.sf_script_path = picked
+                    else:
+                        st.session_state.sf_script_path = picked
+                    st.rerun()
+        else:
+            st.warning(f"⚠️ La ruta no existe: {current_root}")
+        
+        if not is_script_browse:
+            if st.button("Cerrar explorador", key="close_browser"):
+                del st.session_state.browse_root
+                st.rerun()
+        else:
+            if st.button("Volver a proyecto", key="back_to_project"):
+                st.session_state._script_browse_mode = False
+                st.session_state.browse_root = st.session_state.sf_project_path
+                st.rerun()
 
 
 def _step_client_assignment(clients: List[dict]) -> Optional[Dict]:
@@ -278,7 +368,7 @@ def _step_schedule_tags() -> Optional[Dict]:
             "scheduled": "📅 Agendado — según horario cron",
         }[x],
         index=["on_demand", "continuous", "scheduled"].index(
-            st.session_state.form_data.get("execution_mode", "scheduled")
+            st.session_state.form_data.get("execution_mode", "on_demand")
         ),
         key="sf_execution_mode",
     )
