@@ -186,7 +186,11 @@ class DAGGenerator:
             entry["execution_mode"] = execution_mode
             entry["schedule"] = schedule if execution_mode == "scheduled" else None
             
-            script_file = Path(entry["script_path"])
+            _raw_path = entry.get("script_path")
+            if not _raw_path:
+                result.errors.append(f"No script_path found in registry for: {script_id}")
+                return result
+            script_file = Path(_raw_path)
             if not script_file.exists():
                 pass
             
@@ -334,6 +338,8 @@ dag = DAG(
 )
 
     config_arg = f",\n    args=['--config', {str(Path(config_file))!r}]" if config_file else ""
+    if not script_file:
+        raise ValueError(f"script_file is required but got: {script_file}")
     
     {dag_id}_task = KharonOperator(
         task_id='execute_{dag_id}',
