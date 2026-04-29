@@ -85,6 +85,19 @@ _KHARON_CSS = """
 
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0A0F18 0%, #131923 100%);
+        width: fit-content !important;
+        min-width: 200px !important;
+        max-width: 280px !important;
+    }
+    [data-testid="stSidebar"] > div:first-child {
+        width: fit-content !important;
+        min-width: 200px !important;
+        max-width: 280px !important;
+    }
+    section[data-testid="stSidebarContent"] {
+        width: fit-content !important;
+        min-width: 200px !important;
+        max-width: 280px !important;
     }
     [data-testid="stSidebar"] > div > div {
         display: flex;
@@ -320,7 +333,7 @@ _KHARON_CSS = """
         }
         /* Sidebar mobile adjustments */
         [data-testid="stSidebar"] > div:first-child {
-            width: 240px !important;
+            min-width: 0 !important;
             max-width: 70vw !important;
         }
         [data-testid="stSidebar"] .stButton > button,
@@ -598,7 +611,7 @@ def _render_sidebar() -> None:
         )
         st.markdown(
             f'<div class="sidebar-footer" style="text-align:center; padding: 4px 0;">'
-            f'<img src="{_ARKHUR_LOGO_URI}" alt="Arkh-Ur" style="width:100px; margin:0 auto; display:block; opacity:0.5; transition:opacity 0.2s;" '
+            f'<img src="{_ARKHUR_LOGO_URI}" alt="Arkh-Ur" style="width:90px; margin:0 auto; display:block; opacity:0.5; transition:opacity 0.2s;" '
             f'onmouseenter="this.style.opacity=0.8" onmouseleave="this.style.opacity=0.5" />'
             f'<div style="font-size:9px; color:#4b5563; letter-spacing:2px; font-family:monospace; text-transform:uppercase; margin-top:4px;">'
             f'© Arkh-Ur {datetime.now().year}</div>'
