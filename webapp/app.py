@@ -113,10 +113,12 @@ _KHARON_CSS = """
         border: 1px solid rgba(255,255,255,0.05);
         color: #9ca3af !important;
         text-align: left;
-        padding: 10px 14px;
+        padding: 9px 14px !important;
         border-radius: 10px;
         transition: all 0.15s ease;
-        display: block;
+        display: flex !important;
+        align-items: center !important;
+        line-height: 1.4 !important;
     }
     /* Active sidebar nav button */
     [data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] {
@@ -129,10 +131,12 @@ _KHARON_CSS = """
         color: #ffffff !important;
         font-weight: 600 !important;
         text-align: left;
-        padding: 10px 14px;
+        padding: 9px 14px !important;
         border-radius: 10px;
         transition: all 0.15s ease;
-        display: block;
+        display: flex !important;
+        align-items: center !important;
+        line-height: 1.4 !important;
         box-shadow: 0 0 12px rgba(59,130,246,0.08);
     }
 
@@ -168,8 +172,8 @@ _KHARON_CSS = """
         font-weight: 700;
     }
     [data-testid="stSidebar"] .stButton > button:hover {
-        background: rgba(255,255,255,0.03);
-        border-color: rgba(255,255,255,0.1);
+        background: rgba(255,255,255,0.03) !important;
+        border-color: rgba(255,255,255,0.1) !important;
     }
     
     .stButton > button:not(:disabled) {
@@ -561,11 +565,11 @@ _PAGE_MAP = {p: p for p in _PAGES}
 def _render_sidebar() -> None:
     with st.sidebar:
         st.markdown(
-            f'<div style="display:flex;align-items:center;gap:12px;padding:8px 0 4px 0;">'
-            f'<img src="{_KHARON_ICON_URI}" alt="Kharōn" style="width:36px;height:36px;flex-shrink:0;" />'
-            f'<div>'
-            f'<div style="font-size:16px;font-weight:800;letter-spacing:4px;text-transform:uppercase;color:white;line-height:1.1;">Kharōn</div>'
-            f'<div style="font-size:9px;color:#6b7280;letter-spacing:3px;text-transform:uppercase;">Sistema de Monitoreo</div>'
+            f'<div style="display:flex;align-items:center;gap:10px;padding:10px 4px 6px 4px;">'
+            f'<img src="{_KHARON_ICON_URI}" alt="Kharōn" style="width:32px;height:32px;flex-shrink:0;display:block;" />'
+            f'<div style="display:flex;flex-direction:column;justify-content:center;">'
+            f'<span style="font-size:15px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:white;line-height:1.2;display:block;">Kharōn</span>'
+            f'<span style="font-size:8px;color:#6b7280;letter-spacing:2.5px;text-transform:uppercase;line-height:1;display:block;margin-top:1px;">Sistema de Monitoreo</span>'
             f'</div>'
             f'</div>',
             unsafe_allow_html=True,
