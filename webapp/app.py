@@ -994,10 +994,9 @@ def _page_processes() -> None:
     )
 
     try:
-        st_autorefresh = getattr(st, "autorefresh", None)
-        if callable(st_autorefresh):
-            st_autorefresh(interval=30000)
-    except Exception:
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=30000, key="proc_autorefresh")
+    except ImportError:
         pass
 
     clients = _get_clients()
@@ -1030,7 +1029,74 @@ def _page_processes() -> None:
                 filtered_dags.append(dag)
         kharon_dags = filtered_dags
 
-    if not kharon_dags:
+    # ── Pending deployments (in registry but not yet in Airflow) ──
+    _af_dag_ids = {d.get("dag_id", "") for d in kharon_dags}
+    _registry_all = _get_dag_generator()._load_registry()
+    _pending = []
+    if selected_client != "Todos":
+        selected_client_id = client_options.get(selected_client, selected_client)
+    for _sid, _meta in _registry_all.items():
+        if _sid not in _af_dag_ids:
+            if selected_client == "Todos" or _meta.get("client_id") == selected_client_id:
+                _pending.append((_sid, _meta))
+
+    if _pending:
+        st.markdown(
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
+            '<span style="font-size:10px;letter-spacing:2px;text-transform:uppercase;'
+            'font-family:monospace;color:#f59e0b;font-weight:700;">Desplegando</span>'
+            '<span style="font-size:10px;color:#6b7280;font-family:monospace;">'
+            'Esperando a que Airflow detecte los nuevos DAGs…</span></div>',
+            unsafe_allow_html=True,
+        )
+        _pulse_css = (
+            "@keyframes kharon-pulse{0%,100%{opacity:.4}50%{opacity:1}}"
+        )
+        st.markdown(f"<style>{_pulse_css}</style>", unsafe_allow_html=True)
+        for _sid, _meta in _pending:
+            _p_name = _meta.get("script_name", _sid)
+            _p_mode = _meta.get("execution_mode", "on_demand")
+            _p_client = _meta.get("client_id", "")
+            _mode_pill_labels = {
+                "on_demand": "Demanda",
+                "continuous": "Continuo",
+                "scheduled": "Agendado",
+            }
+            _mode_pill_colors = {
+                "on_demand": "#6b7280",
+                "continuous": "#3b82f6",
+                "scheduled": "#f59e0b",
+            }
+            _pill = _mode_pill_labels.get(_p_mode, "Demanda")
+            _pill_c = _mode_pill_colors.get(_p_mode, "#6b7280")
+            st.markdown(
+                f'<div style="background:#111827;border:1px solid rgba(245,158,11,0.15);'
+                f'border-radius:12px;padding:14px 18px;margin-bottom:8px;'
+                f'display:flex;align-items:center;gap:12px;">'
+                f'<div style="animation:kharon-pulse 1.5s ease-in-out infinite;'
+                f'width:10px;height:10px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></div>'
+                f'<div style="flex:1;min-width:0;">'
+                f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+                f'<span style="font-weight:600;color:#e5e7eb;">{_p_name}</span>'
+                f'<span style="font-family:monospace;font-size:10px;padding:2px 8px;'
+                f'border-radius:99;background:rgba({_hex_to_rgb(_pill_c)},.06);'
+                f'border:1px solid rgba({_hex_to_rgb(_pill_c)},.2);color:{_pill_c};'
+                f'white-space:nowrap;">{_pill}</span>'
+                f'<span style="color:#6b7280;font-size:0.75em;font-family:monospace;">'
+                f'{_p_client}</span>'
+                f'</div>'
+                f'<div style="color:#f59e0b;font-size:10px;font-family:monospace;'
+                f'letter-spacing:1px;text-transform:uppercase;margin-top:4px;'
+                f'animation:kharon-pulse 1.5s ease-in-out infinite;">'
+                f'⏳ Desplegando — DAG: {_sid}.py</div>'
+                f'</div>'
+                f'<div style="color:#6b7280;font-size:10px;font-family:monospace;'
+                f'white-space:nowrap;">~30s</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    if not kharon_dags and not _pending:
         st.info("No hay procesos para el cliente seleccionado.")
         return
 
@@ -1884,9 +1950,11 @@ def _page_new_script() -> None:
                     config_file=result.get("config_file"),
                 )
                 if gen_result.success:
-                    st.success(f"✅ Script **{result.get('name', '')}** creado exitosamente.")
-                    st.toast("🎉 DAG generado — Airflow lo detectará en ~30s", icon="✅")
-                    st.info("El DAG se generará en el próximo ciclo de parsing de Airflow (~30s).")
+                    st.toast(f"🎉 {result.get('name', '')} creado — redirigiendo a Procesos…", icon="✅")
+                    import time
+                    time.sleep(1.5)
+                    st.session_state._nav_target = "⚙️ Procesos"
+                    st.rerun()
                 else:
                     st.error(f"Error: {', '.join(gen_result.errors)}")
             except Exception as e:
@@ -2120,6 +2188,10 @@ def main() -> None:
     st.markdown(_KHARON_CSS, unsafe_allow_html=True)
 
     _init_session_state()
+
+    if "_nav_target" in st.session_state:
+        st.session_state.current_page = st.session_state.pop("_nav_target")
+
     _render_sidebar()
 
     current = st.session_state.current_page
