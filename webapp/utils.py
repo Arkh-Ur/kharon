@@ -1,13 +1,20 @@
 """Shared utilities for Kharōn webapp."""
 
+import html
 import io
+import os
 import re
+import tempfile
 from typing import Any, List, Optional
 
 _WEEKDAYS = {
     "0": "domingo", "1": "lunes", "2": "martes", "3": "miércoles",
     "4": "jueves", "5": "viernes", "6": "sábado", "7": "domingo",
 }
+
+
+def safe_html(text: str) -> str:
+    return html.escape(str(text))
 
 
 def describe_cron(expr: str) -> str:
@@ -178,3 +185,16 @@ def format_airflow_log(content: Any) -> str:
                         )
 
     return "\n".join(lines)
+
+
+def atomic_write(path: str, content: str) -> None:
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        os.unlink(tmp_path)
+        raise

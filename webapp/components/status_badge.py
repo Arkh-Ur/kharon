@@ -1,4 +1,5 @@
 import base64
+import html as _html_module
 import os
 from pathlib import Path
 
@@ -58,11 +59,10 @@ def render_status_badge(status: str) -> None:
 
 
 def _client_icon_html(client: dict) -> str:
-    """Logo image si existe, sino cuadrado de inicial con color del cliente."""
     logo_path = client.get("logo_path", "")
     color = client.get("color", "#374151")
     name = client.get("name", "?")
-    initial = name[0].upper() if name else "?"
+    initial = _html_module.escape(name[0].upper()) if name else "?"
 
     if logo_path and os.path.isfile(logo_path):
         ext = Path(logo_path).suffix.lstrip(".").lower()
@@ -85,12 +85,7 @@ def _client_icon_html(client: dict) -> str:
 
 
 def render_client_badge(client: dict) -> None:
-    """Renderiza un badge con logo (o inicial) y nombre del cliente.
-
-    Args:
-        client: Dict con claves 'name', 'color' (hex), 'logo_path' (opcional).
-    """
-    name = client.get("name", "Desconocido")
+    name = _html_module.escape(client.get("name", "Desconocido"))
     color = client.get("color", "#374151")
     bg = _lighten_color(color)
     icon_html = _client_icon_html(client)
@@ -100,14 +95,8 @@ def render_client_badge(client: dict) -> None:
 
 
 def render_health_indicator(health: dict) -> None:
-    """Renderiza un indicador de salud con icono y texto.
-
-    Args:
-        health: Dict con clave 'status' ('healthy', 'unhealthy', 'unknown')
-                y opcionalmente 'detail' (str).
-    """
     status = health.get("status", "unknown")
-    detail = health.get("detail", "")
+    detail = _html_module.escape(health.get("detail", ""))
 
     cfg = {
         "healthy":   {"color": "#22c55e", "bg": "rgba(34,197,94,0.15)", "icon": "✅", "label": "Saludable"},
@@ -124,14 +113,9 @@ def render_health_indicator(health: dict) -> None:
 
 
 def render_criticality_badge(criticality: str) -> None:
-    """Renderiza un badge de nivel de criticalidad.
-
-    Args:
-        criticality: Nivel ('alta', 'media', 'baja').
-    """
     key = criticality.lower() if criticality else "default"
     cfg = _CRITICALITY_CONFIG.get(key, _CRITICALITY_CONFIG["default"])
-    label = criticality.title() if criticality else "Sin definir"
+    label = _html_module.escape(criticality.title()) if criticality else "Sin definir"
     html = _badge_html(label, cfg["bg"], cfg["color"], cfg["icon"])
     st.markdown(html, unsafe_allow_html=True)
 

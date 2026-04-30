@@ -5,14 +5,13 @@ Provides robust script execution with timeout handling, result parsing, and comp
 """
 
 import dataclasses
+import json
 import logging
 import os
 import subprocess
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-
-import yaml
 
 logger = logging.getLogger("kharon.runner")
 
@@ -187,8 +186,8 @@ class ScriptRunner:
             
         try:
             result_json = result_lines[0][7:]
-            return yaml.safe_load(result_json)
+            return json.loads(result_json)
             
-        except (yaml.YAMLError, ValueError) as e:
+        except (json.JSONDecodeError, ValueError) as e:
             logger.warning(f"Failed to parse RESULT from stdout: {e}")
             return None

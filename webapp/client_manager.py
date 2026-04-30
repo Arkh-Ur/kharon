@@ -11,6 +11,7 @@ from dataclasses import dataclass, asdict
 from copy import deepcopy
 
 import config
+from utils import atomic_write
 
 
 @dataclass
@@ -63,31 +64,24 @@ class ClientManager:
             raise ValueError(f"Invalid YAML in registry file: {e}") from e
     
     def _save_yaml(self, data: Dict) -> None:
-        """Save clients to YAML file.
-        
-        Args:
-            data: Dict containing clients data to save
-            
-        Raises:
-            IOError: If file write fails
-        """
-        try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-        except IOError as e:
-            raise IOError(f"Failed to save registry file: {e}") from e
+        content = yaml.dump(data, default_flow_style=False, allow_unicode=True)
+        atomic_write(str(self.config_path), content)
     
+    def _clients_as_dict(self) -> Dict:
+        """Return current in-memory clients as flat dict keyed by client id."""
+        return {cid: asdict(c) for cid, c in self._clients.items()}
+
     def load_clients(self) -> Dict[str, Client]:
         try:
             data = self._load_yaml()
             self._clients = {}
-            
+
             if not isinstance(data, dict):
                 self._cache_valid = True
                 return {}
-            
+
             clients_list = data.get('clients', [])
-            
+
             if isinstance(clients_list, list) and clients_list:
                 for client_data in clients_list:
                     if not isinstance(client_data, dict):
@@ -107,6 +101,8 @@ class ClientManager:
                         active=client_data.get('active', True),
                         logo_path=client_data.get('logo_path', ''),
                     )
+                # Migrate legacy list format to flat dict format
+                self._save_yaml(self._clients_as_dict())
             else:
                 for key, val in data.items():
                     if key == 'clients' or not isinstance(val, dict):
@@ -125,10 +121,10 @@ class ClientManager:
                         active=val.get('active', True),
                         logo_path=val.get('logo_path', ''),
                     )
-            
+
             self._cache_valid = True
             return deepcopy(self._clients)
-            
+
         except (ValueError, IOError) as e:
             raise
     

@@ -2,9 +2,12 @@ import json
 import os
 import random
 import base64
-from datetime import datetime, timedelta
+import shutil
+import yaml
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List
+from zoneinfo import ZoneInfo
 
 import plotly.graph_objects as go
 import plotly.express as px
@@ -15,7 +18,7 @@ from airflow_client import AirflowClient, AirflowClientError
 from client_manager import ClientManager
 from dag_generator import DAGGenerator
 import config
-from utils import describe_cron, extract_primary_color
+from utils import describe_cron, extract_primary_color, safe_html
 from components.dag_card import render_dag_card
 from components.log_viewer import render_log_viewer
 from components.script_form import render_script_form
@@ -526,6 +529,7 @@ def _init_session_state() -> None:
             st.session_state[key] = val
 
 
+@st.cache_resource
 def _get_airflow_client() -> AirflowClient:
     return AirflowClient()
 
@@ -536,6 +540,33 @@ def _get_client_manager() -> ClientManager:
 
 def _get_dag_generator() -> DAGGenerator:
     return DAGGenerator()
+
+
+@st.cache_data(ttl=5)
+def _get_kharon_dags(_cache_buster: int = 0) -> tuple:
+    """Fetch all Kharon DAGs + their recent runs in one call.
+
+    Returns (kharon_dags, dag_runs_map) where dag_runs_map maps dag_id → list of runs.
+    Uses AirflowClient internally which handles its own re-auth on 401.
+    The _cache_buster param is unused but allows manual cache invalidation.
+    """
+    try:
+        client = AirflowClient()
+        all_dags = client.list_dags()
+    except AirflowClientError:
+        return ([], {})
+
+    kharon_dags = [d for d in all_dags if _is_kharon_dag(d)]
+
+    dag_runs_map: dict = {}
+    for dag in kharon_dags:
+        dag_id = dag.get("dag_id", "")
+        try:
+            dag_runs_map[dag_id] = client.list_dag_runs(dag_id, limit=15)
+        except AirflowClientError:
+            dag_runs_map[dag_id] = []
+
+    return (kharon_dags, dag_runs_map)
 
 
 def _get_clients() -> List[dict]:
@@ -674,6 +705,11 @@ def _render_sidebar() -> None:
             f'onmouseenter="this.style.opacity=0.8" onmouseleave="this.style.opacity=0.5" />'
             f'<div style="font-size:9px; color:#4b5563; letter-spacing:2px; font-family:monospace; text-transform:uppercase; margin-top:4px;">'
             f'© Arkh-Ur {datetime.now().year}</div>'
+            f'<div style="font-size:11px; color:#6b7280; font-family:monospace; margin-top:6px; '
+            f'background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); '
+            f'border-radius:6px; padding:4px 10px; display:inline-block; letter-spacing:1px;">'
+            f'🕐 {datetime.now(ZoneInfo("America/Santiago")).strftime("%H:%M:%S")}'
+            f'<span style="font-size:8px; color:#4b5563; margin-left:4px;">SCL</span></div>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -706,57 +742,16 @@ def _page_dashboard() -> None:
         "queued": "#f59e0b",
     }
 
-    try:
-        client = _get_airflow_client()
-        dags = client.list_dags(limit=200)
-    except AirflowClientError as e:
-        st.warning(f"Airflow no disponible: {e}")
-        col1, col2, col3, col4 = st.columns(4)
-        _placeholder_data = [
-            (col1, "—", "Total Scripts", "#3b82f6", "📦"),
-            (col2, "—", "En Ejecución", "#3b82f6", "⚡"),
-            (col3, "—", "Tasa de Éxito", "#545B67", "✅"),
-            (col4, "—", "Duración Prom.", "#545B67", "⏱"),
-        ]
-        for col, value, label, color, icon in _placeholder_data:
-            with col:
-                st.markdown(
-                    f'<div class="metric-card" style="--card-accent:{color};--card-accent-rgb:{_hex_to_rgb(color)};">'
-                    f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
-                    f'<div class="metric-value" style="color:{color}">{value}</div>'
-                    f'<div class="metric-label">{label}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-        fig_placeholder = go.Figure()
-        fig_placeholder.update_layout(**_PLOTLY_LAYOUT, height=400, title_text="Sin datos (Airflow no disponible)")
-        st.plotly_chart(fig_placeholder, use_container_width=True)
-        return
-
-    if not dags:
-        st.info("No hay DAGs registrados.")
-        return
-
-    kharon_dags = [
-        d for d in dags
-        if d.get("dag_id", "").startswith("kharon_")
-        or any(t.get("name", "") == "kharon-auto" for t in d.get("tags", []))
-    ]
+    kharon_dags, cached_runs_map = _get_kharon_dags()
 
     if not kharon_dags:
         st.info("No hay DAGs de Kharōn registrados.")
         return
 
-    dag_runs_map = {}
+    dag_runs_map = cached_runs_map
     dag_client_map = {}
     for dag in kharon_dags:
         dag_id = dag.get("dag_id", "")
-        try:
-            runs = client.list_dag_runs(dag_id, limit=10)
-            dag_runs_map[dag_id] = runs
-        except AirflowClientError:
-            dag_runs_map[dag_id] = []
-
         client_name = None
         for tag in dag.get("tags", []):
             tag_name = tag.get("name", "")
@@ -815,15 +810,6 @@ def _page_dashboard() -> None:
         (row2_col2, f"{avg_min}m {avg_sec}s", "Duración Prom.", "#f59e0b", "⏱"),
     ]
     for col, value, label, color, icon in _metric_data_row2:
-        with col:
-            st.markdown(
-                f'<div class="metric-card" style="--card-accent:{color};--card-accent-rgb:{_hex_to_rgb(color)};">'
-                f'<div style="font-size:1.4em;margin-bottom:4px;">{icon}</div>'
-                f'<div class="metric-value" style="color:{color}">{value}</div>'
-                f'<div class="metric-label">{label}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
         with col:
             st.markdown(
                 f'<div class="metric-card" style="--card-accent:{color};--card-accent-rgb:{_hex_to_rgb(color)};">'
@@ -1007,6 +993,168 @@ def _page_dashboard() -> None:
             st.info("Sin datos de estados.")
 
 
+@st.fragment(run_every=30)
+def _dag_chart_fragment(dag_id: str) -> None:
+    """Refresca solo el gráfico de ejecuciones sin rerenderizar la página completa."""
+    _santiago = ZoneInfo("America/Santiago")
+    _color_map = {
+        "success": "#22c55e", "failed": "#ef4444",
+        "running": "#3b82f6", "queued": "#f59e0b",
+    }
+    _state_labels = {
+        "success": "OK", "failed": "Fallido",
+        "running": "Ejecutando", "queued": "En cola",
+    }
+
+    _max_show = st.slider(
+        "Ejecuciones",
+        min_value=5, max_value=100, value=5, step=5,
+        key=f"nruns_{dag_id}",
+        label_visibility="collapsed",
+        help="Últimas N ejecuciones en el gráfico",
+    )
+
+    # Fetch propio dentro del fragment — independiente del ciclo principal
+    _fetch_limit = max(_max_show * 3, 30)
+    try:
+        _af = AirflowClient()
+        _runs = _af.list_dag_runs(dag_id, limit=_fetch_limit)
+    except Exception:
+        _runs = []
+
+    if not _runs:
+        st.info("Sin ejecuciones previas.")
+        return
+
+    df_data: list = []
+    for r in _runs:
+        start_str = r.get("start_date") or r.get("logical_date", "")
+        end_str = r.get("end_date", "")
+        state = r.get("state", "")
+        start_dt = end_dt = None
+        if start_str:
+            try:
+                start_dt = datetime.fromisoformat(str(start_str).replace("Z", "+00:00")).astimezone(_santiago)
+                if end_str:
+                    end_dt = datetime.fromisoformat(str(end_str).replace("Z", "+00:00")).astimezone(_santiago)
+                elif state == "running":
+                    end_dt = datetime.now(_santiago)
+                else:
+                    end_dt = start_dt
+            except (ValueError, TypeError):
+                pass
+        if start_dt and end_dt:
+            dur = (end_dt - start_dt).total_seconds()
+            if dur >= 3600:
+                h, m = divmod(int(dur), 3600); dur_text = f"{h}h{m:02d}m"
+            elif dur >= 60:
+                m, s = divmod(int(dur), 60); dur_text = f"{m}m{s:02d}s"
+            elif dur >= 1:
+                dur_text = f"{dur:.0f}s"
+            else:
+                dur_text = "<1s"
+            df_data.append({
+                "run": start_dt.strftime("%H:%M:%S"),
+                "start_dt": start_dt, "end_dt": end_dt,
+                "state": state, "dur_text": dur_text,
+            })
+
+    # Ascendente por tiempo → [-_max_show:] = últimos N (más recientes)
+    df_data.sort(key=lambda x: x["start_dt"])
+    df_data = df_data[-_max_show:]
+
+    if not df_data:
+        st.info("Sin ejecuciones con fecha disponible.")
+        return
+
+    df = pd.DataFrame(df_data)
+    fig = go.Figure()
+    for _, row in df.iterrows():
+        _s, _e = row["start_dt"], row["end_dt"]
+        _real_dur_s = (_e - _s).total_seconds()
+        _display_dur_ms = max(_real_dur_s, 5) * 1000
+        fig.add_trace(go.Bar(
+            y=[row["run"]], x=[_display_dur_ms], base=[_s],
+            orientation="h",
+            marker_color=_color_map.get(row["state"], "#545B67"),
+            text=f" {row['dur_text']}",
+            textposition="auto",
+            textfont=dict(size=11, color="#fff"),
+            hovertemplate=(
+                f"{_state_labels.get(row['state'], row['state'])}<br>"
+                f"Inicio: {_s.strftime('%H:%M:%S')}<br>"
+                f"Fin: {_e.strftime('%H:%M:%S') if row['state'] != 'running' else '...'}<br>"
+                f"Duración: {row['dur_text']}<extra></extra>"
+            ),
+            showlegend=False,
+            marker_line_width=0,
+        ))
+
+    _now = datetime.now(_santiago)
+    _min_t = min(r["start_dt"] for r in df_data)
+    _span = max((_now - _min_t).total_seconds(), 60)
+    fig.update_layout(
+        title=dict(
+            text="⏱ Timeline de Ejecuciones",
+            subtitle=dict(
+                text="Ancho = duración · Posición = horario · 🔵 Corriendo · 🟢 OK · 🔴 Fallido · 🟡 En cola",
+                font=dict(size=11, color="#6b7280"),
+            ),
+            font=dict(size=14, color="#e5e7eb"),
+            x=0.5, xanchor="center",
+        ),
+        paper_bgcolor="#131923", plot_bgcolor="#0A0F18", font_color="#e5e7eb",
+        height=max(220, len(df_data) * 40),
+        margin=dict(l=10, r=10, t=60, b=20),
+        barmode="overlay",
+        xaxis_type="date",
+        xaxis=dict(
+            tickformat="%H:%M:%S",
+            gridcolor="rgba(255,255,255,0.04)",
+            range=[
+                _min_t - timedelta(seconds=max(_span * 0.05, 30)),
+                _now + timedelta(seconds=max(_span * 0.15, 60)),
+            ],
+        ),
+        yaxis=dict(
+            autorange="reversed",
+            gridcolor="rgba(255,255,255,0.04)",
+            title="Inicio",
+        ),
+    )
+    st.plotly_chart(fig, use_container_width=True, key=f"chart_{dag_id}")
+
+
+@st.fragment(run_every=3)
+def _dag_exec_banner(dag_id: str, exec_key: str) -> None:
+    """Banner de estado de ejecución. Fragment independiente: se refresca cada 3s
+    sin rerenderizar la página, y desaparece solo cuando el run termina."""
+    if exec_key not in st.session_state:
+        return
+
+    _sent_run_id = st.session_state[exec_key]
+    try:
+        _af = AirflowClient()
+        _run_data = _af.get_dag_run(dag_id, _sent_run_id)
+        _state = _run_data.get("state") or "queued"
+    except AirflowClientError:
+        _state = None
+
+    if _state is None:
+        st.info("🚀 Enviado a Airflow — aparecerá en ~5s")
+    elif _state in ("success", "failed"):
+        del st.session_state[exec_key]
+        if _state == "success":
+            st.toast("✅ Ejecución completada exitosamente", icon="✅")
+        else:
+            st.toast("❌ Ejecución finalizada con error", icon="❌")
+        st.rerun()  # rerenderiza solo este fragment → banner desaparece inmediatamente
+    elif _state == "running":
+        st.info("🔄 Ejecutando…")
+    else:
+        st.info("⏳ En cola — esperando worker…")
+
+
 # ─── Page: Procesos ────────────────────────────────────────────────────────────
 
 def _page_processes() -> None:
@@ -1017,11 +1165,8 @@ def _page_processes() -> None:
         unsafe_allow_html=True,
     )
 
-    try:
-        from streamlit_autorefresh import st_autorefresh
-        st_autorefresh(interval=30000, key="proc_autorefresh")
-    except ImportError:
-        pass
+    # st_autorefresh eliminado — cada gráfico usa @st.fragment(run_every=30)
+    # para refrescarse sin tintineo de página completa
 
     clients = _get_clients()
     if not clients:
@@ -1040,15 +1185,10 @@ def _page_processes() -> None:
 
     try:
         client = _get_airflow_client()
-        all_dags = client.list_dags(limit=200)
+        kharon_dags, dag_runs_map = _get_kharon_dags()
     except AirflowClientError as e:
         st.warning(f"No se pudo conectar con Airflow: {e}")
         return
-
-    kharon_dags = [
-        d for d in all_dags
-        if any(t.get("name", "") == "kharon-auto" for t in d.get("tags", []))
-    ]
 
     if selected_client != "Todos":
         selected_client_id = client_options.get(selected_client, selected_client)
@@ -1102,9 +1242,9 @@ def _page_processes() -> None:
         )
         st.markdown(f"<style>{_pulse_css}</style>", unsafe_allow_html=True)
         for _sid, _meta in _pending:
-            _p_name = _meta.get("script_name", _sid)
+            _p_name = safe_html(_meta.get("script_name", _sid))
             _p_mode = _meta.get("execution_mode", "on_demand")
-            _p_client = _meta.get("client_id", "")
+            _p_client = safe_html(_meta.get("client_id", ""))
             _mode_pill_labels = {
                 "on_demand": "Demanda",
                 "continuous": "Continuo",
@@ -1138,7 +1278,7 @@ def _page_processes() -> None:
                 f'<div style="color:#f59e0b;font-size:10px;font-family:monospace;'
                 f'letter-spacing:1px;text-transform:uppercase;margin-top:4px;'
                 f'animation:kharon-pulse 1.5s ease-in-out infinite;">'
-                f'⏳ Desplegando — DAG: {_sid}.py</div>'
+                f'⏳ Desplegando — DAG: {safe_html(_sid)}.py</div>'
                 f'</div>'
                 f'<div style="color:#6b7280;font-size:10px;font-family:monospace;'
                 f'white-space:nowrap;">~30s</div>'
@@ -1161,48 +1301,23 @@ def _page_processes() -> None:
         st.info("No hay procesos para el cliente seleccionado.")
         return
 
-    # ── Summary bar ──
+    # ── Summary bar (computed from main loop below, rendered after) ──
     _summary_colors = {
         "success": "#22c55e", "failed": "#ef4444",
         "running": "#3b82f6", "queued": "#f59e0b", "never": "#545B67",
     }
-    _state_counts = {}
-    for dag in kharon_dags:
-        _did = dag.get("dag_id", "")
-        try:
-            _runs_check = client.list_dag_runs(_did, limit=1)
-            _s = _runs_check[0].get("state", "never") if _runs_check else "never"
-        except Exception:
-            _s = "never"
-        _state_counts[_s] = _state_counts.get(_s, 0) + 1
-
     _label_map = {
         "success": "OK", "failed": "Failed", "running": "Running",
         "queued": "En cola", "never": "Sin ejecución",
     }
-    _summary_parts = []
-    for _state, _count in sorted(_state_counts.items()):
-        _c = _summary_colors.get(_state, "#545B67")
-        _l = _label_map.get(_state, _state)
-        _summary_parts.append(
-            f'<span style="font-family:monospace;font-size:10px;padding:2px 8px;'
-            f'border-radius:99;background:rgba({_hex_to_rgb(_c)},.06);'
-            f'border:1px solid rgba({_hex_to_rgb(_c)},.2);color:{_c};'
-            f'white-space:nowrap;">{_count} {_l}</span>'
-        )
-    st.markdown(
-        f'<div class="kharon-summary-bar" style="background:#111827;border-radius:12px;padding:10px 14px;margin-bottom:16px;'
-        f'border:1px solid rgba(255,255,255,0.05);display:flex;align-items:center;flex-wrap:wrap;gap:6px;">'
-        f'<span style="color:#6b7280;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;font-family:monospace;margin-right:4px;">Resumen</span>'
-        + "".join(_summary_parts) +
-        f'<span style="color:#4b5563;margin-left:auto;font-size:10px;font-family:monospace;">{len(kharon_dags)} proc</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+    _state_counts = {}
+
+    _summary_placeholder = st.empty()
+    _registry = _get_dag_generator()._load_registry()
 
     for dag in kharon_dags:
         dag_id = dag.get("dag_id", "")
-        desc = dag.get("description") or dag_id
+        desc = safe_html(dag.get("description") or dag_id)
         schedule = dag.get("schedule_interval", {})
         schedule_val = schedule.get("value", "") if isinstance(schedule, dict) else ""
 
@@ -1214,11 +1329,12 @@ def _page_processes() -> None:
             mode = f"📅 {describe_cron(schedule_val)}"
 
         try:
-            runs = client.list_dag_runs(dag_id, limit=15)
-        except AirflowClientError:
+            runs = dag_runs_map.get(dag_id, [])
+        except Exception:
             runs = []
 
         last_state = runs[0].get("state", "never") if runs else "never"
+        _state_counts[last_state] = _state_counts.get(last_state, 0) + 1
         # Build mode pill
         _mode_pill_colors = {
             "on_demand": "#6b7280",
@@ -1230,7 +1346,7 @@ def _page_processes() -> None:
             "continuous": "Continuo",
             "scheduled": "Agendado",
         }
-        _registry_meta = _get_dag_generator()._load_registry().get(dag_id, {})
+        _registry_meta = _registry.get(dag_id, {})
         _reg_mode = _registry_meta.get("execution_mode", "on_demand")
         _pill_color = _mode_pill_colors.get(_reg_mode, "#6b7280")
         _pill_label = _mode_pill_labels.get(_reg_mode, "Demanda")
@@ -1250,7 +1366,7 @@ def _page_processes() -> None:
         if project_path:
             header_parts.append(
                 f'<span style="color:#4b5563;font-size:0.7em;font-family:monospace;">'
-                f'📁 {project_path}</span>'
+                f'📁 {safe_html(project_path)}</span>'
             )
         
         st.markdown(
@@ -1261,77 +1377,19 @@ def _page_processes() -> None:
             unsafe_allow_html=True,
         )
         with st.expander(f"  Ver detalles ({dag_id})"):
-
-            if runs:
-                _color_map = {
-                    "success": "#22c55e",
-                    "failed": "#ef4444",
-                    "running": "#3b82f6",
-                    "queued": "#f59e0b",
-                }
-                df_data = []
-                for r in runs:
-                    start_str = r.get("start_date") or r.get("logical_date", "")
-                    end_str = r.get("end_date", "")
-                    state = r.get("state", "")
-                    duration = 0.0
-                    if start_str:
-                        try:
-                            s = datetime.fromisoformat(str(start_str).replace("Z", "+00:00"))
-                            if end_str:
-                                e = datetime.fromisoformat(str(end_str).replace("Z", "+00:00"))
-                            elif state == "running":
-                                e = datetime.now(s.tzinfo)
-                            else:
-                                e = s
-                            duration = max((e - s).total_seconds(), 0.0)
-                        except (ValueError, TypeError):
-                            pass
-
-                    run_id_full = r.get("dag_run_id", "")
-                    if "__" in run_id_full:
-                        time_part = run_id_full.split("__", 1)[1]
-                        label = time_part.split("T")[1][:8] if "T" in time_part else time_part[:10]
-                    else:
-                        label = run_id_full[-10:] if run_id_full else f"#{len(df_data)}"
-
-                    df_data.append({
-                        "run": label,
-                        "display_dur": max(duration, 0.5),  # mínimo visible
-                        "real_dur": duration,
-                        "state": state,
-                    })
-
-                df = pd.DataFrame(df_data)
-                fig = go.Figure(go.Bar(
-                    x=df["run"],
-                    y=df["display_dur"],
-                    marker_color=[_color_map.get(s, "#545B67") for s in df["state"]],
-                    text=[f"{d:.0f}s" if d >= 1 else "<1s" for d in df["real_dur"]],
-                    textposition="auto",
-                    hovertemplate="%{x}<br>%{text}<extra></extra>",
-                ))
-                fig.update_layout(
-                    title="Historial de Ejecuciones",
-                    paper_bgcolor="#131923",
-                    plot_bgcolor="#0A0F18",
-                    font_color="#e5e7eb",
-                    height=300,
-                    xaxis_title="",
-                    yaxis_title="Segundos",
-                    margin=dict(l=10, r=10, t=40, b=10),
-                )
-                st.plotly_chart(fig, use_container_width=True, key=f"chart_{dag_id}")
-            else:
-                st.info("Sin ejecuciones previas.")
+            # El gráfico vive en su propio fragment: se refresca cada 30s sin
+            # rerenderizar el resto de la página (elimina el tintineo)
+            _dag_chart_fragment(dag_id)
 
             col_exec, col_log, col_cfg, col_mode, col_del = st.columns([1, 1, 1, 1.2, 1])
 
             with col_exec:
+                _exec_key = f"exec_sent_{dag_id}"
                 if st.button("▶ Ejecutar", key=f"exec_{dag_id}", use_container_width=True):
                     try:
                         result = client.trigger_dag(dag_id)
-                        st.success(f"✅ Ejecución iniciada: {result.get('dag_run_id', '')}")
+                        st.session_state[_exec_key] = result.get("dag_run_id", "")
+                        _get_kharon_dags.clear()
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error al ejecutar: {e}")
@@ -1365,17 +1423,20 @@ def _page_processes() -> None:
 
             with col_cfg:
                 # ── Config File Viewer/Editor ──
-                _registry = _get_dag_generator()._load_registry()
                 _script_meta = _registry.get(dag_id, {})
                 _config_path = _script_meta.get("config_file")
                 
                 if _config_path:
                     _config_key = f"config_edit_{dag_id}"
                     _config_show_key = f"config_show_{dag_id}"
-                    
+
+                    _project_path = _script_meta.get("project_path", "")
+                    if not os.path.isabs(_config_path) and _project_path:
+                        _config_path = os.path.join(_project_path, _config_path)
+
                     if st.button("📄 Ver Config", key=f"cfg_{dag_id}", use_container_width=False):
                         st.session_state[_config_show_key] = not st.session_state.get(_config_show_key, False)
-                    
+
                     if st.session_state.get(_config_show_key, False):
                         if os.path.isfile(_config_path):
                             try:
@@ -1384,7 +1445,7 @@ def _page_processes() -> None:
                                 st.markdown(
                                     f'<div style="font-family:monospace;font-size:10px;color:#6b7280;'
                                     f'letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">'
-                                    f'{_config_path}</div>',
+                                    f'{safe_html(_config_path)}</div>',
                                     unsafe_allow_html=True,
                                 )
                                 _edited = st.text_area(
@@ -1398,9 +1459,15 @@ def _page_processes() -> None:
                                 with _col_save:
                                     if st.button("💾 Guardar", key=f"cfg_save_{dag_id}"):
                                         try:
+                                            shutil.copy2(_config_path, f"{_config_path}.bak")
                                             with open(_config_path, "w") as f:
                                                 f.write(_edited)
+                                            with open(_config_path, "r") as f:
+                                                yaml.safe_load(f)
                                             st.success("✅ Configuración guardada")
+                                        except yaml.YAMLError:
+                                            shutil.copy2(f"{_config_path}.bak", _config_path)
+                                            st.error("❌ YAML inválido — archivo restaurado desde backup")
                                         except Exception as e:
                                             st.error(f"Error al guardar: {e}")
                                 with _col_cancel:
@@ -1410,11 +1477,10 @@ def _page_processes() -> None:
                             except Exception as e:
                                 st.error(f"Error al leer config: {e}")
                         else:
-                            st.warning(f"⚠️ Archivo no encontrado: {_config_path}")
+                            st.warning(f"⚠️ Config no encontrado: {_config_path}")
 
             with col_mode:
                 # ── Execution Mode Switcher ──
-                _registry = _get_dag_generator()._load_registry()
                 _script_meta = _registry.get(dag_id, {})
                 _current_mode = _script_meta.get("execution_mode", "on_demand")
                 _has_registry_entry = bool(_script_meta)
@@ -1484,6 +1550,11 @@ def _page_processes() -> None:
                 if st.button("🗑 Eliminar", key=f"del_{dag_id}", use_container_width=True):
                     st.session_state[f"confirm_del_{dag_id}"] = True
 
+            # Banner de ejecución — ancho completo, debajo de los botones
+            _exec_key = f"exec_sent_{dag_id}"
+            if _exec_key in st.session_state:
+                _dag_exec_banner(dag_id, _exec_key)
+
             # Log persiste entre reruns usando session_state — se muestra en ancho completo
             _log_key = f"log_data_{dag_id}"
             if _log_key in st.session_state:
@@ -1529,6 +1600,27 @@ def _page_processes() -> None:
                         st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Render summary bar now that all runs have been fetched ──
+    _summary_parts = []
+    for _state, _count in sorted(_state_counts.items()):
+        _c = _summary_colors.get(_state, "#545B67")
+        _l = _label_map.get(_state, _state)
+        _summary_parts.append(
+            f'<span style="font-family:monospace;font-size:10px;padding:2px 8px;'
+            f'border-radius:99;background:rgba({_hex_to_rgb(_c)},.06);'
+            f'border:1px solid rgba({_hex_to_rgb(_c)},.2);color:{_c};'
+            f'white-space:nowrap;">{_count} {_l}</span>'
+        )
+    _summary_placeholder.markdown(
+        f'<div class="kharon-summary-bar" style="background:#111827;border-radius:12px;padding:10px 14px;margin-bottom:16px;'
+        f'border:1px solid rgba(255,255,255,0.05);display:flex;align-items:center;flex-wrap:wrap;gap:6px;">'
+        f'<span style="color:#6b7280;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;font-family:monospace;margin-right:4px;">Resumen</span>'
+        + "".join(_summary_parts) +
+        f'<span style="color:#4b5563;margin-left:auto;font-size:10px;font-family:monospace;">{len(kharon_dags)} proc</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
 
 # ─── Page: Ver Logs ───────────────────────────────────────────────────────────
 
@@ -1542,12 +1634,10 @@ def _page_view_logs() -> None:
 
     try:
         client = _get_airflow_client()
-        dags = client.list_dags(limit=200)
+        kharon_dags, _ = _get_kharon_dags()
     except AirflowClientError as e:
         st.error(f"Error al conectar con Airflow: {e}")
         return
-
-    kharon_dags = [d for d in dags if _is_kharon_dag(d)]
     if not kharon_dags:
         st.info("No hay DAGs disponibles.")
         return
@@ -1641,7 +1731,7 @@ def _page_view_logs() -> None:
 
     try:
         log_content = client.get_task_log(selected_dag, selected_run, selected_task, try_number)
-        render_log_viewer(log_content, auto_refresh=True)
+        render_log_viewer(log_content, auto_refresh=True, key_prefix="logs_page_")
     except AirflowClientError as e:
         st.error(f"Error al obtener log: {e}")
 
@@ -1658,28 +1748,21 @@ def _page_global_monitoring() -> None:
 
     try:
         af = _get_airflow_client()
-        dags = af.list_dags(limit=200)
+        kharon_dags, dag_runs_map = _get_kharon_dags()
     except AirflowClientError as e:
         st.error(f"Error al conectar con Airflow: {e}")
         return
 
-    # Incluye DAGs por tag kharon-auto O prefijo kharon_ (DAGs manuales incluidos)
-    kharon_dags = [d for d in dags if _is_kharon_dag(d)]
-
-    # Construir mapa dag_id → client_id para filtrar por cliente usando tags
     dag_client_map: dict = {d.get("dag_id", ""): _dag_client_id(d) for d in kharon_dags}
 
     all_runs: list = []
     for dag in kharon_dags:
         dag_id = dag.get("dag_id", "")
-        try:
-            runs = af.list_dag_runs(dag_id, limit=15)
-            for run in runs:
-                run["dag_id"] = dag_id
-                run["_client_id"] = dag_client_map.get(dag_id, "")
-                all_runs.append(run)
-        except AirflowClientError:
-            continue
+        runs = dag_runs_map.get(dag_id, [])
+        for run in runs:
+            run["dag_id"] = dag_id
+            run["_client_id"] = dag_client_map.get(dag_id, "")
+            all_runs.append(run)
 
     all_runs.sort(key=lambda r: _dag_run_date(r), reverse=True)
     all_runs = all_runs[:200]
@@ -1815,8 +1898,8 @@ def _page_global_monitoring() -> None:
         _table_rows.append(
             f'<tr>'
             f'<td>{_status_dot_html(_state)}{_badge_label_html(_state)}</td>'
-            f'<td><span class="dag-name">{_dag_id}</span></td>'
-            f'<td><span class="client-id">{_client_id}</span></td>'
+            f'<td><span class="dag-name">{safe_html(_dag_id)}</span></td>'
+            f'<td><span class="client-id">{safe_html(_client_id)}</span></td>'
             f'<td><span class="date-cell">{_date_display}</span></td>'
             f'<td><span class="type-badge {_type_class}">{_type_label}</span></td>'
             f'</tr>'
@@ -1849,12 +1932,10 @@ def _page_health_by_client() -> None:
 
     try:
         af = _get_airflow_client()
-        dags = af.list_dags(limit=200)
+        kharon_dags, dag_runs_map = _get_kharon_dags()
     except AirflowClientError as e:
         st.error(f"Error al conectar con Airflow: {e}")
         return
-
-    kharon_dags = [d for d in dags if _is_kharon_dag(d)]
     if not kharon_dags:
         st.info("No hay DAGs de Kharōn registrados.")
         return
@@ -1868,10 +1949,7 @@ def _page_health_by_client() -> None:
         dag_id = dag.get("dag_id", "")
         client_id = _dag_client_id(dag) or "sin_cliente"
 
-        try:
-            runs = af.list_dag_runs(dag_id, limit=20)
-        except AirflowClientError:
-            runs = []
+        runs = dag_runs_map.get(dag_id, [])
 
         completed = [r for r in runs if r.get("state") in ("success", "failed")]
         total = len(completed)
@@ -1931,7 +2009,7 @@ def _page_health_by_client() -> None:
         with st.container():
             col_hdr, col_bar = st.columns([2, 3])
             with col_hdr:
-                st.markdown(f"### 🏢 {client_id}")
+                st.markdown(f"### 🏢 {safe_html(client_id)}")
                 parts = []
                 if healthy_count:
                     parts.append(f"{healthy_count} ✅")
@@ -1950,7 +2028,7 @@ def _page_health_by_client() -> None:
                     unsafe_allow_html=True,
                 )
 
-            with st.expander(f"Ver detalle — {client_id}"):
+            with st.expander(f"Ver detalle — {safe_html(client_id)}"):
                 for s in scripts:
                     col_name, col_hlth, col_detail = st.columns([2, 1, 2])
                     with col_name:
@@ -1990,16 +2068,19 @@ def _page_new_script() -> None:
         st.warning("No hay clientes registrados. Creá uno primero en ⚙️ Configuración.")
 
     try:
-        client = _get_airflow_client()
-        existing_dags = client.list_dags(limit=200)
+        kharon_dags, _ = _get_kharon_dags()
     except AirflowClientError:
-        existing_dags = []
+        kharon_dags = []
 
-    existing_scripts = [
-        {"name": d.get("dag_id", "")}
-        for d in existing_dags
-        if d.get("dag_id", "").startswith("kharon_")
-    ]
+    existing_scripts = []
+    _gen_registry = _get_dag_generator()._load_registry()
+    _existing_ids = set(_gen_registry.keys())
+    for d in kharon_dags:
+        _tags = [t.get("name", "") if isinstance(t, dict) else t for t in d.get("tags", [])]
+        if "kharon-auto" in _tags:
+            _existing_ids.add(d.get("dag_id", ""))
+    for _eid in _existing_ids:
+        existing_scripts.append({"name": _eid})
 
     result = render_script_form(clients, existing_scripts)
 
@@ -2031,8 +2112,6 @@ def _page_new_script() -> None:
                 )
                 if gen_result.success:
                     st.toast(f"🎉 {result.get('name', '')} creado — redirigiendo a Procesos…", icon="✅")
-                    import time
-                    time.sleep(1.5)
                     st.session_state._nav_target = "⚙️ Procesos"
                     st.rerun()
                 else:
@@ -2070,8 +2149,8 @@ def _page_configuration() -> None:
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;'
                 f'border-bottom:1px solid rgba(255,255,255,0.04);">'
-                f'<span style="color:#6b7280;font-size:10px;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">{key}</span>'
-                f'<span style="color:#9ca3af;font-size:0.8em;font-family:monospace;word-break:break-all;max-width:60%;text-align:right;">{val}</span>'
+                f'<span style="color:#6b7280;font-size:10px;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">{safe_html(key)}</span>'
+                f'<span style="color:#9ca3af;font-size:0.8em;font-family:monospace;word-break:break-all;max-width:60%;text-align:right;">{safe_html(val)}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -2118,7 +2197,7 @@ def _page_configuration() -> None:
                 f'padding:5px 14px;border-radius:14px;font-size:0.85em;'
                 f'font-weight:600;white-space:nowrap;display:inline-flex;'
                 f'align-items:center;gap:6px;">'
-                f'{icon_html} {name}</span>'
+                f'{icon_html} {safe_html(name)}</span>'
             )
         tags_html += '</div>'
         st.markdown(tags_html, unsafe_allow_html=True)
@@ -2232,8 +2311,8 @@ def _page_configuration() -> None:
                 info_html += (
                     f'<div style="display:flex;justify-content:space-between;padding:6px 0;'
                     f'border-bottom:1px solid #1E2632;">'
-                    f'<span style="color:#9ca3af;font-size:0.85em;">{label}</span>'
-                    f'<span style="color:#e5e7eb;font-size:0.85em;font-family:JetBrains Mono,monospace;">{val}</span>'
+                    f'<span style="color:#9ca3af;font-size:0.85em;">{safe_html(label)}</span>'
+                    f'<span style="color:#e5e7eb;font-size:0.85em;font-family:JetBrains Mono,monospace;">{safe_html(val)}</span>'
                     f'</div>'
                 )
             info_html += '</div>'
