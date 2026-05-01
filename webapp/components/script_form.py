@@ -1,4 +1,6 @@
 import os
+import re
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import streamlit as st
@@ -279,26 +281,42 @@ def _step_script_config() -> Optional[Dict]:
 
     if config_file:
         full_cfg_path = config_file if os.path.isabs(config_file) else os.path.join(project_path, config_file)
-        if os.path.isfile(full_cfg_path):
+        _allowed_root = Path(project_path).resolve() if project_path else None
+        _safe_cfg = True
+        if _allowed_root:
+            try:
+                _safe_cfg = Path(full_cfg_path).resolve().is_relative_to(_allowed_root)
+            except Exception:
+                _safe_cfg = False
+        if not _safe_cfg:
+            st.warning("⚠️ Config fuera del directorio del proyecto")
+        elif os.path.isfile(full_cfg_path):
+            st.success(f"✅ Config encontrado: {full_cfg_path}")
             with st.expander("📄 Vista previa del config"):
                 try:
-                    with open(full_cfg_path, "r") as f:
+                    with open(full_cfg_path, "r", encoding="utf-8") as f:
                         preview = f.read(3000)
                     ext = os.path.splitext(full_cfg_path)[1]
                     lang = {'.py': 'python', '.sh': 'bash', '.yaml': 'yaml', '.yml': 'yaml', '.json': 'json', '.toml': 'toml', '.env': 'bash'}.get(ext, '')
                     st.code(preview, language=lang)
                 except Exception:
                     st.warning("No se pudo leer el archivo")
+        else:
+            st.warning(f"⚠️ El config no existe en el proyecto: {config_file}")
 
     can_continue = False
     if project_path and script_path:
         full_script_path = os.path.join(project_path, script_path)
-        if os.path.isfile(full_script_path):
+        _allowed_root = Path(project_path).resolve()
+        _safe_script = Path(full_script_path).resolve().is_relative_to(_allowed_root)
+        if not _safe_script:
+            st.warning("⚠️ Ruta fuera del directorio del proyecto")
+        elif os.path.isfile(full_script_path):
             st.success(f"✅ Script encontrado: {full_script_path}")
             can_continue = True
             with st.expander("Vista previa del script"):
                 try:
-                    with open(full_script_path, "r") as f:
+                    with open(full_script_path, "r", encoding="utf-8") as f:
                         preview = f.read(5000)
                     st.code(preview, language=interpreter)
                 except Exception:
@@ -395,7 +413,17 @@ def _render_file_browser(mode="project") -> None:
                     if st.button("📄", key=_btn_key, help=f"Seleccionar {f}"):
                         full_path = os.path.join(browse_root, f)
                         project_path = st.session_state.get("sf_project_path", "")
-                        rel = os.path.relpath(full_path, project_path) if project_path and os.path.exists(project_path) else full_path
+                        if project_path and os.path.isdir(project_path):
+                            try:
+                                if not Path(full_path).resolve().is_relative_to(Path(project_path).resolve()):
+                                    st.warning("⚠️ El archivo está fuera del directorio del proyecto")
+                                    st.rerun()
+                            except Exception:
+                                st.warning("⚠️ No se pudo verificar la ruta del archivo.")
+                                st.stop()
+                            rel = os.path.relpath(full_path, project_path)
+                        else:
+                            rel = full_path
                         if mode == "script":
                             st.session_state._pending_script_path = rel
                         else:
@@ -416,7 +444,7 @@ def _step_client_assignment(clients: List[dict]) -> Optional[Dict]:
         _nav_buttons(False, "client")
         return None
 
-    client_options = {c.get("name", ""): c.get("id", c.get("name", "").lower().replace(" ", "_")) for c in clients}
+    client_options = {c.get("name", ""): c.get("id", re.sub(r'_+', '_', re.sub(r'[^a-z0-9_]', '_', c.get("name", "").lower())).strip('_')) for c in clients if re.sub(r'_+', '_', re.sub(r'[^a-z0-9_]', '_', c.get("name", "").lower())).strip('_')}
     client_names = list(client_options.keys())
     default_idx = 0
     saved = st.session_state.form_data.get("client")
@@ -560,7 +588,7 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
         ("📂 Ruta", safe_html(fd.get('script_path', '—'))),
         ("📄 Config", safe_html(fd.get('config_file') or '—')),
         ("🏢 Cliente", safe_html(fd.get('client', '—'))),
-        ("⏱ Modo", mode_display.get(fd.get('execution_mode', ''), '—')),
+        ("⏱ Modo", safe_html(mode_display.get(fd.get('execution_mode', ''), '—'))),
         ("🏷 Tags", safe_html(', '.join(fd.get('tags', [])) or '—')),
         ("⏰ Timeout", f"{fd.get('timeout', 3600)}s"),
         ("🔁 Reintentos", str(fd.get('retries', 2))),

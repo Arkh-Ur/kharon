@@ -6,7 +6,6 @@ Uses JWT cookie-based auth via /api/v2/auth/login flow.
 import json
 from typing import Dict, List, Optional, Any
 import requests
-from requests.auth import HTTPBasicAuth
 from requests.exceptions import RequestException
 
 import config
@@ -45,16 +44,20 @@ class AirflowClient:
         self._authenticate()
 
     def _authenticate(self) -> None:
+        # This Airflow installation uses GET + BasicAuth for the login endpoint.
+        # POST with JSON body returns 405 on this deployment (non-standard but functional).
+        from requests.auth import HTTPBasicAuth
         login_url = f"{self.base_url}/api/v2/auth/login"
         try:
             response = self.session.get(
                 login_url,
                 auth=HTTPBasicAuth(self.username, self.password),
                 allow_redirects=True,
+                timeout=30,
             )
-            if '_token' not in self.session.cookies.get_dict():
+            if not response.ok or not self.session.cookies:
                 raise AirflowClientError(
-                    "Authentication failed: no JWT token received from Airflow",
+                    "Authentication failed: no session cookie received",
                     status_code=response.status_code,
                 )
         except RequestException as e:
@@ -63,7 +66,7 @@ class AirflowClient:
     def _request(self, method: str, endpoint: str, **kwargs) -> Dict:
         url = f"{self.base_url}{endpoint}"
 
-        if '_token' not in self.session.cookies.get_dict():
+        if not self.session.cookies:
             self._authenticate()
 
         try:
@@ -90,8 +93,6 @@ class AirflowClient:
             return {}
 
         except RequestException as e:
-            if isinstance(e, AirflowClientError):
-                raise
             raise AirflowClientError(f"Request failed: {str(e)}") from e
 
     def health_check(self) -> Dict:
@@ -101,8 +102,9 @@ class AirflowClient:
         endpoint = f"{self.API_PREFIX}/dags"
         all_dags: List[Dict] = []
         current_offset = offset
+        max_pages = 20
 
-        while True:
+        for _ in range(max_pages):
             params = {"limit": limit, "offset": current_offset}
             try:
                 response = self._request("GET", endpoint, params=params)

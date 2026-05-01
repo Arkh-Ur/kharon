@@ -9,8 +9,8 @@ import streamlit as st
 _STATUS_CONFIG = {
     "success":      {"color": "#22c55e", "bg": "rgba(34,197,94,0.15)", "label": "Exitoso",   "icon": "✅"},
     "failed":       {"color": "#ef4444", "bg": "rgba(239,68,68,0.15)", "label": "Fallido",    "icon": "❌"},
-    "running":      {"color": "#f59e0b", "bg": "rgba(245,158,11,0.15)", "label": "Ejecutando", "icon": "🔄"},
-    "queued":       {"color": "#3b82f6", "bg": "rgba(59,130,246,0.15)", "label": "En cola",   "icon": "⏳"},
+    "running":      {"color": "#3b82f6", "bg": "rgba(59,130,246,0.15)", "label": "Ejecutando", "icon": "🔄"},
+    "queued":       {"color": "#f59e0b", "bg": "rgba(245,158,11,0.15)", "label": "En cola",   "icon": "⏳"},
     "paused":       {"color": "#9ca3af", "bg": "rgba(156,163,175,0.15)", "label": "Pausado",    "icon": "⏸️"},
     "up_for_retry": {"color": "#f59e0b", "bg": "rgba(245,158,11,0.15)", "label": "Reintentando", "icon": "🔁"},
     "upstream_failed": {"color": "#ef4444", "bg": "rgba(239,68,68,0.15)", "label": "Padre fallido", "icon": "⚠️"},
@@ -32,7 +32,7 @@ def _badge_html(text: str, bg_color: str, text_color: str, icon: str = "") -> st
         f'background-color:{bg_color};'
         f'color:{text_color};'
         f'padding:3px 10px;'
-        f'border-radius:99;'
+        f'border-radius:99px;'
         f'font-size:10px;'
         f'font-weight:600;'
         f'font-family:monospace;'

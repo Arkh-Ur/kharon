@@ -142,3 +142,16 @@ Two historical conventions co-exist:
 ## E2E tests
 
 Playwright-based (`tests/e2e/`). Require both services running. Screenshots on failure → `tests/e2e/screenshots/`. Password from `KHARON_AIRFLOW_PASSWORD` env var or `airflow_home/simple_auth_manager_passwords.json.generated`.
+
+## Skills (Auto-load based on context)
+
+When you detect any of these contexts, IMMEDIATELY load the corresponding skill BEFORE writing any code.
+
+| Context | Skill to load |
+| ------- | ------------- |
+| Streamlit apps, st.cache_*, st.session_state, st.fragment, st.form | streamlit |
+| Building UI components, pages, dashboards, HTML/CSS layouts | frontend-design |
+| shadcn/ui components, components.json, component registries | shadcn |
+| Complex multi-component HTML artifacts (React, Tailwind, shadcn) | web-artifacts-builder |
+
+Load skills BEFORE writing code. Apply ALL patterns. Multiple skills can apply simultaneously.

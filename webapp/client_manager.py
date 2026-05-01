@@ -4,6 +4,7 @@ Client management module for Kharōn webapp.
 Handles client registry operations, client data management, and badge generation.
 """
 
+import html
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -151,7 +152,7 @@ class ClientManager:
         if not self._cache_valid:
             self.load_clients()
         
-        return [client for client in self._clients.values() if client.active]
+        return [deepcopy(client) for client in self._clients.values() if client.active]
     
     def generate_badge(self, client_id: str) -> str:
         """Generate HTML badge for a client.
@@ -188,7 +189,7 @@ class ClientManager:
             f"border-radius: 12px; "
             f"font-size: 12px; "
             f'font-weight: bold;">'
-            f"{client.icon} {client.short_name}"
+            f"{html.escape(client.icon)} {html.escape(client.short_name)}"
             f"</span>"
         )
     
@@ -247,8 +248,9 @@ class ClientManager:
         if client_data['id'] in self._clients:
             raise ValueError(f"Client {client_data['id']} already exists")
         
-        # Create client object
-        client = Client(**client_data)
+        # Create client object — filter to known fields only
+        _known_fields = {f.name for f in Client.__dataclass_fields__.values()}
+        client = Client(**{k: v for k, v in client_data.items() if k in _known_fields})
         
         try:
             registry_data = self._load_yaml()

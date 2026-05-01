@@ -115,7 +115,12 @@ class ScriptRunner:
                 exit_code = process.returncode
             except subprocess.TimeoutExpired:
                 process.kill()
-                stdout, stderr = process.communicate()
+                try:
+                    stdout, stderr = process.communicate()
+                except Exception:
+                    stdout, stderr = "", ""
+                stdout = stdout or ""
+                stderr = stderr or ""
                 timed_out = True
                 exit_code = -1
                 

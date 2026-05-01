@@ -188,7 +188,7 @@ def format_airflow_log(content: Any) -> str:
 
 
 def atomic_write(path: str, content: str) -> None:
-    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), suffix='.tmp')
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)), suffix='.tmp')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(content)
@@ -196,5 +196,24 @@ def atomic_write(path: str, content: str) -> None:
             os.fsync(f.fileno())
         os.replace(tmp_path, path)
     except BaseException:
-        os.unlink(tmp_path)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_bytes(path: str, content: bytes) -> None:
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)), suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
         raise
