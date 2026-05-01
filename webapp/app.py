@@ -416,6 +416,15 @@ _KHARON_CSS = """
             font-size: 0.9em !important;
             margin-bottom: 2px !important;
         }
+        .stButton button p {
+            font-size: 0.65em !important;
+            word-break: break-word !important;
+            line-height: 1.2 !important;
+        }
+        .stButton button {
+            min-height: 40px !important;
+            padding: 2px 4px !important;
+        }
     }
 
     /* ── Monitoring Table ─────────────────────────────────── */
