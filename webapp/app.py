@@ -1514,7 +1514,7 @@ def _page_processes() -> None:
             unsafe_allow_html=True,
         )
 
-        # ── Action bar: Log, Config, Pausar, Delete ──
+        # ── Action bar: 4 buttons with emoji + label ──
         col_log, col_cfg, col_pause, col_del = st.columns(4)
 
         with col_log:
@@ -1560,10 +1560,10 @@ def _page_processes() -> None:
                     st.error(f"Error al cambiar estado: {e}")
 
         with col_del:
-            if st.button("🗑", key=f"del_{dag_id}", use_container_width=True):
+            if st.button("🗑 Eliminar", key=f"del_{dag_id}", use_container_width=True):
                 st.session_state[f"confirm_del_{dag_id}"] = True
 
-        # ── Mode switcher row ──
+        # ── Mode switcher (full width, below action bar) ──
         _script_meta = _registry.get(dag_id, {})
         _current_mode = _script_meta.get("execution_mode", "on_demand")
         _has_registry_entry = bool(_script_meta)
@@ -1580,7 +1580,7 @@ def _page_processes() -> None:
                 "scheduled": "📅 Agendado",
             }
 
-            _mode_sb_col, _mode_apply_col = st.columns([3, 1])
+            _mode_sb_col, _mode_apply_col = st.columns([4, 1])
             with _mode_sb_col:
                 _new_mode = st.selectbox(
                     "Modo de ejecución",
@@ -1590,46 +1590,47 @@ def _page_processes() -> None:
                     key=f"mode_sb_{dag_id}",
                     label_visibility="collapsed",
                 )
-            st.session_state[_mode_key] = _new_mode
+            with _mode_apply_col:
+                st.session_state[_mode_key] = _new_mode
 
-            _schedule_val = None
-            if _new_mode == "scheduled":
-                _sched_key = f"sched_{dag_id}"
-                _current_sched = _script_meta.get("schedule", "0 6 * * *")
-                if _sched_key not in st.session_state:
-                    st.session_state[_sched_key] = _current_sched
-                _schedule_val = st.text_input(
-                    "Cron",
-                    value=st.session_state[_sched_key],
-                    key=f"cron_{dag_id}",
-                    placeholder="0 6 * * *",
-                    label_visibility="collapsed",
-                )
-                st.session_state[_sched_key] = _schedule_val
+                _schedule_val = None
+                if _new_mode == "scheduled":
+                    _sched_key = f"sched_{dag_id}"
+                    _current_sched = _script_meta.get("schedule", "0 6 * * *")
+                    if _sched_key not in st.session_state:
+                        st.session_state[_sched_key] = _current_sched
+                    _schedule_val = st.text_input(
+                        "Cron",
+                        value=st.session_state[_sched_key],
+                        key=f"cron_{dag_id}",
+                        placeholder="0 6 * * *",
+                        label_visibility="collapsed",
+                    )
+                    st.session_state[_sched_key] = _schedule_val
 
-            _mode_changed = _new_mode != _current_mode
-            _sched_changed = _new_mode == "scheduled" and _schedule_val != _script_meta.get("schedule")
-            if _mode_changed or _sched_changed:
-                if st.button("✓ Aplicar modo", key=f"apply_mode_{dag_id}", use_container_width=True):
-                    try:
-                        generator = _get_dag_generator()
-                        gen_result = generator.update_execution_mode(
-                            script_id=dag_id,
-                            execution_mode=_new_mode,
-                            schedule=_schedule_val,
-                        )
-                        if gen_result.success:
-                            af_client = _get_airflow_client()
-                            if _new_mode == "on_demand":
-                                af_client.pause_dag(dag_id, paused=True)
+                _mode_changed = _new_mode != _current_mode
+                _sched_changed = _new_mode == "scheduled" and _schedule_val != _script_meta.get("schedule")
+                if _mode_changed or _sched_changed:
+                    if st.button("✓ Aplicar", key=f"apply_mode_{dag_id}", use_container_width=True):
+                        try:
+                            generator = _get_dag_generator()
+                            gen_result = generator.update_execution_mode(
+                                script_id=dag_id,
+                                execution_mode=_new_mode,
+                                schedule=_schedule_val,
+                            )
+                            if gen_result.success:
+                                af_client = _get_airflow_client()
+                                if _new_mode == "on_demand":
+                                    af_client.pause_dag(dag_id, paused=True)
+                                else:
+                                    af_client.pause_dag(dag_id, paused=False)
+                                st.toast(f"✅ Modo actualizado: {_mode_labels.get(_new_mode, _new_mode)}")
+                                st.rerun()
                             else:
-                                af_client.pause_dag(dag_id, paused=False)
-                            st.toast(f"✅ Modo actualizado: {_mode_labels.get(_new_mode, _new_mode)}")
-                            st.rerun()
-                        else:
-                            st.error(f"Error: {', '.join(gen_result.errors)}")
-                    except Exception as e:
-                        st.error(f"Error al actualizar modo: {e}")
+                                st.error(f"Error: {', '.join(gen_result.errors)}")
+                        except Exception as e:
+                            st.error(f"Error al actualizar modo: {e}")
 
         # ── Exec banner ──
         if _exec_key in st.session_state:
