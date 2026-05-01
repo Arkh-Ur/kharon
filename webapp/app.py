@@ -1537,7 +1537,7 @@ def _page_processes() -> None:
                             st.session_state[_log_key] = f"Error al obtener log: {exc}"
 
             with col_cfg:
-                if _config_path and st.button("⚙ Config", key=f"cfg_{dag_id}", use_container_width=True):
+                if st.button("⚙ Config", key=f"cfg_{dag_id}", use_container_width=True):
                     st.session_state[_config_show_key] = not st.session_state.get(_config_show_key, False)
 
             with col_pause:
@@ -1626,13 +1626,13 @@ def _page_processes() -> None:
                 _dag_exec_banner(dag_id, _exec_key)
 
             # ── Config editor (expanded) ──
-            if _config_path and st.session_state.get(_config_show_key, False):
+            if st.session_state.get(_config_show_key, False):
                 st.markdown(
                     '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);'
                     'border-radius:10px;padding:12px 14px;margin:8px 0;">',
                     unsafe_allow_html=True,
                 )
-                if os.path.isfile(_config_path):
+                if _config_path and os.path.isfile(_config_path):
                     try:
                         with open(_config_path, "r", encoding="utf-8") as f:
                             _config_content = f.read()
@@ -1669,8 +1669,33 @@ def _page_processes() -> None:
                                 st.rerun()
                     except Exception as e:
                         st.error(f"Error al leer config: {e}")
-                else:
+                elif _config_path:
                     st.warning(f"⚠️ Config no encontrado: {_config_path}")
+                _col_assign, _col_close_no = st.columns(2)
+                with _col_assign:
+                    _new_cfg = st.text_input(
+                        "Ruta del archivo de configuración",
+                        value=_config_path or "",
+                        key=f"cfg_assign_{dag_id}",
+                        placeholder="ruta/relativa/config.yaml",
+                    )
+                    if st.button("📎 Asignar config", key=f"cfg_assign_btn_{dag_id}"):
+                        if _new_cfg and _new_cfg.strip():
+                            generator = _get_dag_generator()
+                            registry = generator.get_all_scripts()
+                            if dag_id in registry:
+                                registry[dag_id]["config_file"] = _new_cfg.strip()
+                                generator._save_registry(registry)
+                                _get_kharon_dags.clear()
+                                st.toast(f"📎 Config asignado: {_new_cfg.strip()}")
+                                st.rerun()
+                        else:
+                            st.warning("⚠️ Ingresá una ruta de archivo")
+                with _col_close_no:
+                    if not _config_path:
+                        if st.button("✕ Cerrar", key=f"cfg_close_no_{dag_id}"):
+                            st.session_state[_config_show_key] = False
+                            st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
             # ── Log display ──
