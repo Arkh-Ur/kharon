@@ -348,6 +348,18 @@ def _render_file_browser(mode="project") -> None:
 
         current_root = st.session_state.browse_root_input
         if current_root != browse_root:
+            _home = os.path.expanduser("~")
+            _project = st.session_state.get("sf_project_path", "")
+            _allowed = [os.path.abspath(_home)]
+            if _project:
+                _allowed.append(os.path.abspath(_project))
+            _root_ok = any(
+                Path(os.path.abspath(current_root)).is_relative_to(Path(a))
+                for a in _allowed
+            )
+            if not _root_ok:
+                st.warning("⚠️ Solo se puede navegar dentro del directorio home o del proyecto.")
+                current_root = _home
             browse_root = current_root
             st.session_state.browse_root = current_root
 

@@ -5,6 +5,7 @@ Handles client registry operations, client data management, and badge generation
 """
 
 import html
+import threading
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -42,6 +43,7 @@ class ClientManager:
         self.config_path = config_path or config.CLIENTS_REGISTRY_PATH
         self._clients: Dict[str, Client] = {}
         self._cache_valid = False
+        self._lock = threading.RLock()
         
         # Ensure config directory exists
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -73,61 +75,61 @@ class ClientManager:
         return {cid: asdict(c) for cid, c in self._clients.items()}
 
     def load_clients(self) -> Dict[str, Client]:
-        try:
-            data = self._load_yaml()
-            self._clients = {}
+        with self._lock:
+            try:
+                data = self._load_yaml()
+                self._clients = {}
 
-            if not isinstance(data, dict):
+                if not isinstance(data, dict):
+                    self._cache_valid = True
+                    return {}
+
+                clients_list = data.get('clients', [])
+
+                if isinstance(clients_list, list) and clients_list:
+                    for client_data in clients_list:
+                        if not isinstance(client_data, dict):
+                            continue
+                        client_id = client_data.get('id', '')
+                        if not client_id:
+                            continue
+                        self._clients[client_id] = Client(
+                            id=client_id,
+                            name=client_data.get('name', ''),
+                            short_name=client_data.get('short_name', ''),
+                            description=client_data.get('description', ''),
+                            color=client_data.get('color', '#374151'),
+                            icon=client_data.get('icon', ''),
+                            contact_email=client_data.get('contact_email', ''),
+                            contact_name=client_data.get('contact_name', ''),
+                            active=client_data.get('active', True),
+                            logo_path=client_data.get('logo_path', ''),
+                        )
+                    self._save_yaml(self._clients_as_dict())
+                else:
+                    for key, val in data.items():
+                        if key == 'clients' or not isinstance(val, dict):
+                            continue
+                        if 'id' not in val:
+                            val['id'] = key
+                        self._clients[key] = Client(
+                            id=val.get('id', key),
+                            name=val.get('name', ''),
+                            short_name=val.get('short_name', ''),
+                            description=val.get('description', ''),
+                            color=val.get('color', '#374151'),
+                            icon=val.get('icon', ''),
+                            contact_email=val.get('contact_email', ''),
+                            contact_name=val.get('contact_name', ''),
+                            active=val.get('active', True),
+                            logo_path=val.get('logo_path', ''),
+                        )
+
                 self._cache_valid = True
-                return {}
+                return deepcopy(self._clients)
 
-            clients_list = data.get('clients', [])
-
-            if isinstance(clients_list, list) and clients_list:
-                for client_data in clients_list:
-                    if not isinstance(client_data, dict):
-                        continue
-                    client_id = client_data.get('id', '')
-                    if not client_id:
-                        continue
-                    self._clients[client_id] = Client(
-                        id=client_id,
-                        name=client_data.get('name', ''),
-                        short_name=client_data.get('short_name', ''),
-                        description=client_data.get('description', ''),
-                        color=client_data.get('color', '#374151'),
-                        icon=client_data.get('icon', ''),
-                        contact_email=client_data.get('contact_email', ''),
-                        contact_name=client_data.get('contact_name', ''),
-                        active=client_data.get('active', True),
-                        logo_path=client_data.get('logo_path', ''),
-                    )
-                # Migrate legacy list format to flat dict format
-                self._save_yaml(self._clients_as_dict())
-            else:
-                for key, val in data.items():
-                    if key == 'clients' or not isinstance(val, dict):
-                        continue
-                    if 'id' not in val:
-                        val['id'] = key
-                    self._clients[key] = Client(
-                        id=val.get('id', key),
-                        name=val.get('name', ''),
-                        short_name=val.get('short_name', ''),
-                        description=val.get('description', ''),
-                        color=val.get('color', '#374151'),
-                        icon=val.get('icon', ''),
-                        contact_email=val.get('contact_email', ''),
-                        contact_name=val.get('contact_name', ''),
-                        active=val.get('active', True),
-                        logo_path=val.get('logo_path', ''),
-                    )
-
-            self._cache_valid = True
-            return deepcopy(self._clients)
-
-        except (ValueError, IOError) as e:
-            raise
+            except (ValueError, IOError):
+                raise
     
     def get_client(self, client_id: str) -> Optional[Client]:
         """Get a specific client by ID.
@@ -149,10 +151,10 @@ class ClientManager:
         Returns:
             List of active Client objects
         """
-        if not self._cache_valid:
-            self.load_clients()
-        
-        return [deepcopy(client) for client in self._clients.values() if client.active]
+        with self._lock:
+            if not self._cache_valid:
+                self.load_clients()
+            return [deepcopy(client) for client in self._clients.values() if client.active]
     
     def generate_badge(self, client_id: str) -> str:
         """Generate HTML badge for a client.
@@ -243,27 +245,23 @@ class ClientManager:
             if field not in client_data:
                 raise ValueError(f"Missing required field: {field}")
         
-        # Check if client ID already exists
-        self.load_clients()  # Ensure cache is loaded
-        if client_data['id'] in self._clients:
-            raise ValueError(f"Client {client_data['id']} already exists")
-        
-        # Create client object — filter to known fields only
-        _known_fields = {f.name for f in Client.__dataclass_fields__.values()}
-        client = Client(**{k: v for k, v in client_data.items() if k in _known_fields})
-        
-        try:
-            registry_data = self._load_yaml()
-            registry_data[client.id] = asdict(client)
-            self._save_yaml(registry_data)
-            
-            self._clients[client.id] = client
-            self._cache_valid = True
-            
-            return deepcopy(client)
-            
-        except (ValueError, IOError) as e:
-            raise
+        with self._lock:
+            self.load_clients()
+            if client_data['id'] in self._clients:
+                raise ValueError(f"Client {client_data['id']} already exists")
+
+            _known_fields = {f.name for f in Client.__dataclass_fields__.values()}
+            client = Client(**{k: v for k, v in client_data.items() if k in _known_fields})
+
+            try:
+                registry_data = self._load_yaml()
+                registry_data[client.id] = asdict(client)
+                self._save_yaml(registry_data)
+                self._clients[client.id] = client
+                self._cache_valid = True
+                return deepcopy(client)
+            except (ValueError, IOError):
+                raise
     
     def update_client(self, client_id: str, client_data: Dict) -> Client:
         """Update an existing client.
@@ -279,28 +277,24 @@ class ClientManager:
             ValueError: If client not found or data invalid
             IOError: If file operations fail
         """
-        # Load existing clients
-        self.load_clients()
-        
-        if client_id not in self._clients:
-            raise ValueError(f"Client {client_id} not found")
+        with self._lock:
+            self.load_clients()
+            if client_id not in self._clients:
+                raise ValueError(f"Client {client_id} not found")
 
-        existing_client = self._clients[client_id]
-        for field, value in client_data.items():
-            if hasattr(existing_client, field):
-                setattr(existing_client, field, value)
-        
-        try:
-            registry_data = self._load_yaml()
-            registry_data[client_id] = asdict(existing_client)
-            self._save_yaml(registry_data)
-            
-            self._clients[client_id] = existing_client
-            
-            return deepcopy(existing_client)
-            
-        except (ValueError, IOError) as e:
-            raise
+            existing_client = self._clients[client_id]
+            for field, value in client_data.items():
+                if hasattr(existing_client, field):
+                    setattr(existing_client, field, value)
+
+            try:
+                registry_data = self._load_yaml()
+                registry_data[client_id] = asdict(existing_client)
+                self._save_yaml(registry_data)
+                self._clients[client_id] = existing_client
+                return deepcopy(existing_client)
+            except (ValueError, IOError):
+                raise
     
     def delete_client(self, client_id: str) -> bool:
         """Delete a client from registry.
@@ -314,26 +308,22 @@ class ClientManager:
         Raises:
             IOError: If file operations fail
         """
-        # Load existing clients
-        self.load_clients()
-        
-        if client_id not in self._clients:
-            return False
-        
-        try:
-            registry_data = self._load_yaml()
-            if client_id in registry_data:
-                del registry_data[client_id]
-                self._save_yaml(registry_data)
-                
-                del self._clients[client_id]
-                self._cache_valid = True
-                
-                return True
-            
-        except (ValueError, IOError) as e:
-            raise IOError(f"Failed to delete client {client_id}: {e}") from e
-        
+        with self._lock:
+            self.load_clients()
+            if client_id not in self._clients:
+                return False
+
+            try:
+                registry_data = self._load_yaml()
+                if client_id in registry_data:
+                    del registry_data[client_id]
+                    self._save_yaml(registry_data)
+                    del self._clients[client_id]
+                    self._cache_valid = True
+                    return True
+            except (ValueError, IOError) as e:
+                raise IOError(f"Failed to delete client {client_id}: {e}") from e
+
         return False
     
     def reload_cache(self) -> None:

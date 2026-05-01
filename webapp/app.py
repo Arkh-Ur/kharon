@@ -22,7 +22,6 @@ from client_manager import ClientManager
 from dag_generator import DAGGenerator
 import config
 from utils import describe_cron, extract_primary_color, safe_html, atomic_write, atomic_write_bytes
-from components.dag_card import render_dag_card
 from components.log_viewer import render_log_viewer
 from components.script_form import render_script_form
 from components.status_badge import (
@@ -238,6 +237,11 @@ _KHARON_CSS = """
     @keyframes pulse-dot {
         0%, 100% { opacity: 1; transform: scale(1); }
         50% { opacity: 0.6; transform: scale(1.3); }
+    }
+
+    @keyframes kharon-pulse {
+        0%, 100% { opacity: .4; }
+        50% { opacity: 1; }
     }
 
     .health-bar {
@@ -608,6 +612,18 @@ def _get_kharon_dags(_cache_buster: int = 0) -> tuple:
     return (kharon_dags, dag_runs_map)
 
 
+@st.cache_data(ttl=5)
+def _get_kharon_dag_list(_cache_buster: int = 0) -> list:
+    """Fetch only the Kharōn DAG list — no per-DAG run history. Use for pages that don't need runs."""
+    try:
+        client = _get_airflow_client()
+        all_dags = client.list_dags()
+    except AirflowClientError:
+        return []
+    return [d for d in all_dags if _is_kharon_dag(d)]
+
+
+@st.cache_data(ttl=30)
 def _get_clients() -> List[dict]:
     try:
         cm = _get_client_manager()
@@ -1186,7 +1202,7 @@ def _dag_exec_banner(dag_id: str, exec_key: str) -> None:
             st.toast("✅ Ejecución completada exitosamente", icon="✅")
         else:
             st.toast("❌ Ejecución finalizada con error", icon="❌")
-        st.rerun()  # rerenderiza solo este fragment → banner desaparece inmediatamente
+        st.rerun(scope="app")  # rerun completo → banner desaparece inmediatamente en toda la página
     elif _state == "running":
         st.info("🔄 Ejecutando…")
     else:
@@ -1200,7 +1216,7 @@ def _pending_deployments_fragment(pending: list) -> None:
         return
 
     try:
-        _af = AirflowClient()
+        _af = _get_airflow_client()
         _fresh_all = _af.list_dags()
         _af_ids = {d.get("dag_id", "") for d in _fresh_all if _is_kharon_dag(d)}
     except AirflowClientError:
@@ -1210,14 +1226,8 @@ def _pending_deployments_fragment(pending: list) -> None:
 
     if len(still_pending) < len(pending):
         _get_kharon_dags.clear()
-        try:
-            st.rerun(scope="app")
-        except TypeError:
-            st.rerun()
+        st.rerun(scope="app")
         return
-
-    _pulse_css = "@keyframes kharon-pulse{0%,100%{opacity:.4}50%{opacity:1}}"
-    st.markdown(f"<style>{_pulse_css}</style>", unsafe_allow_html=True)
     st.markdown(
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
         '<span style="font-size:10px;letter-spacing:2px;text-transform:uppercase;'
@@ -1266,10 +1276,7 @@ def _pending_deployments_fragment(pending: list) -> None:
                 generator = _get_dag_generator()
                 generator.delete_dag(_sid)
                 _get_kharon_dags.clear()
-                try:
-                    st.rerun(scope="app")
-                except TypeError:
-                    st.rerun()
+                st.rerun(scope="app")
 
 
 # ─── Page: Procesos ────────────────────────────────────────────────────────────
@@ -1279,12 +1286,6 @@ def _page_processes() -> None:
     st.markdown(
         "<p style='color:#6b7280;font-size:10px;letter-spacing:2px;text-transform:uppercase;"
         "font-family:monospace;margin-top:-4px;'>Gestión de scripts registrados, modos de ejecución y configuración</p>",
-        unsafe_allow_html=True,
-    )
-
-    # Fuerza que las columnas del header de cada proceso nunca colapsen en móvil
-    st.markdown(
-        "<style>[data-testid='stHorizontalBlock']{flex-wrap:nowrap!important;}</style>",
         unsafe_allow_html=True,
     )
 
@@ -1299,6 +1300,7 @@ def _page_processes() -> None:
     client_options = {c.get("name", ""): c.get("id", "") for c in clients}
     client_names = ["Todos"] + list(client_options.keys())
     selected_client = st.selectbox("🏢 Filtrar por cliente", client_names, key="proc_client_filter")
+    selected_client_id = ""  # inicializado antes de cualquier rama condicional
 
     search_term = st.text_input(
         "🔍 Buscar proceso", 
@@ -1323,7 +1325,7 @@ def _page_processes() -> None:
         kharon_dags = filtered_dags
 
     # Load registry once for search + pending deployments
-    _registry_all = _get_dag_generator()._load_registry()
+    _registry_all = _get_dag_generator().get_all_scripts()
 
     if search_term:
         search_lower = search_term.lower()
@@ -1374,381 +1376,363 @@ def _page_processes() -> None:
     _registry = _registry_all
 
     for dag in kharon_dags:
-        dag_id = dag.get("dag_id", "")
-        desc = safe_html(dag.get("description") or dag_id)
-        _raw_schedule = dag.get("schedule", dag.get("schedule_interval"))
-        schedule_val = _raw_schedule.get("value", "") if isinstance(_raw_schedule, dict) else (_raw_schedule if isinstance(_raw_schedule, str) else "")
+        with st.container(border=True):
+            dag_id = dag.get("dag_id", "")
+            desc = safe_html(dag.get("description") or dag_id)
+            _raw_schedule = dag.get("schedule", dag.get("schedule_interval"))
+            schedule_val = _raw_schedule.get("value", "") if isinstance(_raw_schedule, dict) else (_raw_schedule if isinstance(_raw_schedule, str) else "")
 
-        if schedule_val == "@continuous":
-            mode = "🔄 Continuo — se re-ejecuta al terminar"
-        elif not schedule_val:
-            mode = "🎯 Demanda — solo ejecución manual"
-        else:
-            mode = f"📅 {describe_cron(schedule_val)}"
+            if schedule_val == "@continuous":
+                mode = "🔄 Continuo — se re-ejecuta al terminar"
+            elif not schedule_val:
+                mode = "🎯 Demanda — solo ejecución manual"
+            else:
+                mode = f"📅 {describe_cron(schedule_val)}"
 
-        try:
-            runs = dag_runs_map.get(dag_id, [])
-        except Exception:
-            runs = []
+            try:
+                runs = dag_runs_map.get(dag_id, [])
+            except Exception:
+                runs = []
 
-        last_state = runs[0].get("state", "never") if runs else "never"
-        _state_counts[last_state] = _state_counts.get(last_state, 0) + 1
-        # Build mode pill
-        _mode_pill_colors = {
-            "on_demand": "#6b7280",
-            "continuous": "#3b82f6", 
-            "scheduled": "#f59e0b",
-        }
-        _mode_pill_labels = {
-            "on_demand": "Demanda",
-            "continuous": "Continuo",
-            "scheduled": "Agendado",
-        }
-        _registry_meta = _registry.get(dag_id, {})
-        _reg_mode = _registry_meta.get("execution_mode", "on_demand")
-        _pill_color = _mode_pill_colors.get(_reg_mode, "#6b7280")
-        _pill_label = _mode_pill_labels.get(_reg_mode, "Demanda")
-        _is_paused = dag.get("is_paused", False)
+            last_state = runs[0].get("state", "never") if runs else "never"
+            _state_counts[last_state] = _state_counts.get(last_state, 0) + 1
+            # Build mode pill
+            _mode_pill_colors = {
+                "on_demand": "#6b7280",
+                "continuous": "#3b82f6", 
+                "scheduled": "#f59e0b",
+            }
+            _mode_pill_labels = {
+                "on_demand": "Demanda",
+                "continuous": "Continuo",
+                "scheduled": "Agendado",
+            }
+            _registry_meta = _registry.get(dag_id, {})
+            _reg_mode = _registry_meta.get("execution_mode", "on_demand")
+            _pill_color = _mode_pill_colors.get(_reg_mode, "#6b7280")
+            _pill_label = _mode_pill_labels.get(_reg_mode, "Demanda")
+            _is_paused = dag.get("is_paused", False)
 
-        _script_name = _registry_meta.get("script_name") or dag_id
+            _script_name = _registry_meta.get("script_name") or dag_id
 
-        _badge_style = "font-family:monospace;font-size:10px;padding:2px 8px;border-radius:99px;white-space:nowrap;"
+            _badge_style = "font-family:monospace;font-size:10px;padding:2px 8px;border-radius:99px;white-space:nowrap;"
 
-        _mode_emoji = {"on_demand": "🎯", "continuous": "🔄", "scheduled": "📅"}.get(_reg_mode, "⚙️")
-        _mode_badge = (
-            f'<span style="{_badge_style}'
-            f'background:rgba({_hex_to_rgb(_pill_color)},.08);'
-            f'border:1px solid rgba({_hex_to_rgb(_pill_color)},.25);color:{_pill_color};">'
-            f'{_mode_emoji} {_pill_label}</span>'
-        )
-
-        if _is_paused:
-            _pause_badge = (
+            _mode_emoji = {"on_demand": "🎯", "continuous": "🔄", "scheduled": "📅"}.get(_reg_mode, "⚙️")
+            _mode_badge = (
                 f'<span style="{_badge_style}'
-                f'background:rgba(107,114,128,.1);border:1px solid rgba(107,114,128,.3);color:#9ca3af;">'
-                f'⏸ Pausado</span>'
-            )
-        else:
-            _pause_badge = (
-                f'<span style="{_badge_style}'
-                f'background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:#22c55e;">'
-                f'✅ Activo</span>'
+                f'background:rgba({_hex_to_rgb(_pill_color)},.08);'
+                f'border:1px solid rgba({_hex_to_rgb(_pill_color)},.25);color:{_pill_color};">'
+                f'{_mode_emoji} {_pill_label}</span>'
             )
 
-        project_path = _registry_meta.get("project_path")
-        _dir_line = (
-            f'<div style="margin-top:3px;padding-left:18px;">'
-            f'<span style="color:#4b5563;font-size:0.7em;font-family:monospace;">📁 {safe_html(project_path)}</span>'
-            f'</div>'
-        ) if project_path else ""
+            if _is_paused:
+                _pause_badge = (
+                    f'<span style="{_badge_style}'
+                    f'background:rgba(107,114,128,.1);border:1px solid rgba(107,114,128,.3);color:#9ca3af;">'
+                    f'⏸ Pausado</span>'
+                )
+            else:
+                _pause_badge = (
+                    f'<span style="{_badge_style}'
+                    f'background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:#22c55e;">'
+                    f'✅ Activo</span>'
+                )
 
-        _exec_key = f"exec_sent_{dag_id}"
+            project_path = _registry_meta.get("project_path")
 
-        _script_meta_cfg = _registry.get(dag_id, {})
-        _config_path = _script_meta_cfg.get("config_file")
-        _config_key = f"config_edit_{dag_id}"
-        _config_show_key = f"config_show_{dag_id}"
+            _exec_key = f"exec_sent_{dag_id}"
 
-        if _config_path:
-            _cfg_project_path = _script_meta_cfg.get("project_path", "")
-            if not os.path.isabs(_config_path) and _cfg_project_path:
-                _config_path = os.path.join(_cfg_project_path, _config_path)
-            _resolved = Path(_config_path).resolve()
-            _allowed_roots = [config.PROJECT_ROOT.resolve(), config.AIRFLOW_HOME.resolve()]
-            if not any(_resolved.is_relative_to(r) for r in _allowed_roots):
-                _config_path = None
+            _script_meta_cfg = _registry.get(dag_id, {})
+            _config_path = _script_meta_cfg.get("config_file")
+            _config_key = f"config_edit_{dag_id}"
+            _config_show_key = f"config_show_{dag_id}"
 
-        st.markdown(
-            f'<div class="kharon-dag-card" style="'
-            f'background:#131923;'
-            f'border:1px solid rgba(255,255,255,0.06);'
-            f'border-radius:14px;'
-            f'padding:16px 20px 12px;'
-            f'margin-bottom:12px;'
-            f'box-shadow:0 2px 8px rgba(0,0,0,0.25);'
-            f'overflow:hidden;'
-            f'">',
-            unsafe_allow_html=True,
-        )
+            if _config_path:
+                _cfg_project_path = _script_meta_cfg.get("project_path", "")
+                if not os.path.isabs(_config_path) and _cfg_project_path:
+                    _config_path = os.path.join(_cfg_project_path, _config_path)
+                _resolved = Path(_config_path).resolve()
+                _allowed_roots = [config.PROJECT_ROOT.resolve(), config.AIRFLOW_HOME.resolve()]
+                if not any(_resolved.is_relative_to(r) for r in _allowed_roots):
+                    _config_path = None
 
-        # ── Header: LEFT (info stacked) / RIGHT (Ejecutar button) ──
-        _col_left, _col_right = st.columns([5, 1])
+            # ── Header: LEFT (info stacked) / RIGHT (Ejecutar button) ──
+            _col_left, _col_right = st.columns([5, 1])
 
-        with _col_left:
-            st.markdown(
-                f'<div style="display:flex;align-items:center;gap:8px;">'
-                f'{_status_dot_html(last_state)}'
-                f'<span style="font-weight:700;font-size:1.05em;color:#e5e7eb;'
-                f'font-family:system-ui,sans-serif;">{desc}</span>'
-                f'<span style="color:#4b5563;font-family:monospace;font-size:0.7em;'
-                f'letter-spacing:0.5px;">{safe_html(dag_id)}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f'<div style="display:flex;align-items:center;gap:6px;margin:4px 0 2px;padding-left:18px;'
-                f'flex-wrap:wrap;">'
-                f'{_mode_badge}{_pause_badge}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-            if project_path:
+            with _col_left:
                 st.markdown(
-                    f'<div style="padding-left:18px;">'
-                    f'<span style="color:#4b5563;font-size:0.72em;font-family:monospace;">'
-                    f'📁 {safe_html(project_path)}</span>'
+                    f'<div style="display:flex;align-items:center;gap:8px;">'
+                    f'{_status_dot_html(last_state)}'
+                    f'<span style="font-weight:700;font-size:1.05em;color:#e5e7eb;'
+                    f'font-family:system-ui,sans-serif;">{desc}</span>'
+                    f'<span style="color:#4b5563;font-family:monospace;font-size:0.7em;'
+                    f'letter-spacing:0.5px;">{safe_html(dag_id)}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-            else:
-                st.markdown('<div style="height:0.72em;"></div>', unsafe_allow_html=True)
-
-        with _col_right:
-            _play_help = "Ejecutar ahora" if not _is_paused else "DAG pausado — activalo primero"
-            _play_btn_key = f"exec_{dag_id}"
-            _play_color = "#6b7280" if _is_paused else "#22c55e"
-            if st.button("▶", key=_play_btn_key, use_container_width=True,
-                         disabled=_is_paused, help=_play_help, type="primary"):
-                try:
-                    result = client.trigger_dag(dag_id)
-                    st.session_state[_exec_key] = result.get("dag_run_id", "")
-                    _get_kharon_dags.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al ejecutar: {e}")
-
-        # ── Divider ──
-        st.markdown(
-            '<div style="height:1px;background:rgba(255,255,255,0.04);margin:8px 0 10px;"></div>',
-            unsafe_allow_html=True,
-        )
-
-        # ── Action bar: 4 buttons with emoji + label ──
-        col_log, col_cfg, col_pause, col_del = st.columns(4)
-
-        with col_log:
-            if runs:
-                last_run_id = runs[0].get("dag_run_id", "")
-                _log_key = f"log_data_{dag_id}"
-                if st.button("📄 Log", key=f"log_{dag_id}", use_container_width=True):
-                    try:
-                        tasks = client.list_task_instances(dag_id, last_run_id)
-                        parts = []
-                        for task in tasks:
-                            task_id = task.get("task_id", "")
-                            task_state = task.get("state")
-                            try_n = int(task.get("try_number") or 0)
-                            _NO_LOG = {"queued", "scheduled", "no_status", "none", None}
-                            if task_state in _NO_LOG or try_n == 0:
-                                parts.append(f"=== {task_id} === [{task_state or 'sin estado'}] sin log todavía")
-                                continue
-                            try_n = max(try_n, 1)
-                            try:
-                                log = client.get_task_log(dag_id, last_run_id, task_id, try_n)
-                                if log:
-                                    parts.append(f"=== {task_id} (intento {try_n}) ===\n{log}")
-                            except AirflowClientError as log_err:
-                                parts.append(f"=== {task_id} === Error: {log_err}")
-                        st.session_state[_log_key] = "\n\n".join(parts) if parts else "(sin contenido de log)"
-                    except Exception as exc:
-                        st.session_state[_log_key] = f"Error al obtener log: {exc}"
-
-        with col_cfg:
-            if _config_path and st.button("⚙ Config", key=f"cfg_{dag_id}", use_container_width=True):
-                st.session_state[_config_show_key] = not st.session_state.get(_config_show_key, False)
-
-        with col_pause:
-            _pause_label = "▶️ Activar" if _is_paused else "⏸ Pausar"
-            _pause_type = "primary" if _is_paused else "secondary"
-            if st.button(_pause_label, key=f"pause_{dag_id}", use_container_width=True, type=_pause_type):
-                try:
-                    client.pause_dag(dag_id, paused=not _is_paused)
-                    _get_kharon_dags.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al cambiar estado: {e}")
-
-        with col_del:
-            if st.button("🗑 Eliminar", key=f"del_{dag_id}", use_container_width=True):
-                st.session_state[f"confirm_del_{dag_id}"] = True
-
-        # ── Mode switcher (full width, below action bar) ──
-        _script_meta = _registry.get(dag_id, {})
-        _current_mode = _script_meta.get("execution_mode", "on_demand")
-        _has_registry_entry = bool(_script_meta)
-
-        if _has_registry_entry:
-            _mode_key = f"mode_{dag_id}"
-            if _mode_key not in st.session_state:
-                st.session_state[_mode_key] = _current_mode
-
-            _mode_options = ["on_demand", "continuous", "scheduled"]
-            _mode_labels = {
-                "on_demand": "🎯 Demanda",
-                "continuous": "🔄 Continuo",
-                "scheduled": "📅 Agendado",
-            }
-
-            _new_mode = st.selectbox(
-                "Modo de ejecución",
-                options=_mode_options,
-                index=_mode_options.index(st.session_state[_mode_key]),
-                format_func=lambda x: _mode_labels.get(x, x),
-                key=f"mode_sb_{dag_id}",
-                label_visibility="collapsed",
-            )
-            st.session_state[_mode_key] = _new_mode
-
-            _schedule_val = None
-            if _new_mode == "scheduled":
-                _sched_key = f"sched_{dag_id}"
-                _current_sched = _script_meta.get("schedule", "0 6 * * *")
-                if _sched_key not in st.session_state:
-                    st.session_state[_sched_key] = _current_sched
-                _schedule_val = st.text_input(
-                    "Cron",
-                    value=st.session_state[_sched_key],
-                    key=f"cron_{dag_id}",
-                    placeholder="0 6 * * *",
-                    label_visibility="collapsed",
-                )
-                st.session_state[_sched_key] = _schedule_val
-
-            _mode_changed = _new_mode != _current_mode
-            _sched_changed = _new_mode == "scheduled" and _schedule_val != _script_meta.get("schedule")
-            if _mode_changed or _sched_changed:
-                if st.button("✓ Aplicar", key=f"apply_mode_{dag_id}", use_container_width=True):
-                    try:
-                        generator = _get_dag_generator()
-                        gen_result = generator.update_execution_mode(
-                            script_id=dag_id,
-                            execution_mode=_new_mode,
-                            schedule=_schedule_val,
-                        )
-                        if gen_result.success:
-                            af_client = _get_airflow_client()
-                            if _new_mode == "on_demand":
-                                af_client.pause_dag(dag_id, paused=True)
-                            else:
-                                af_client.pause_dag(dag_id, paused=False)
-                            st.toast(f"✅ Modo actualizado: {_mode_labels.get(_new_mode, _new_mode)}")
-                            st.rerun()
-                        else:
-                            st.error(f"Error: {', '.join(gen_result.errors)}")
-                    except Exception as e:
-                        st.error(f"Error al actualizar modo: {e}")
-
-        # ── Exec banner ──
-        if _exec_key in st.session_state:
-            _dag_exec_banner(dag_id, _exec_key)
-
-        # ── Config editor (expanded) ──
-        if _config_path and st.session_state.get(_config_show_key, False):
-            st.markdown(
-                '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);'
-                'border-radius:10px;padding:12px 14px;margin:8px 0;">',
-                unsafe_allow_html=True,
-            )
-            if os.path.isfile(_config_path):
-                try:
-                    with open(_config_path, "r", encoding="utf-8") as f:
-                        _config_content = f.read()
-                    st.markdown(
-                        f'<div style="font-family:monospace;font-size:10px;color:#6b7280;'
-                        f'letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">'
-                        f'{safe_html(_config_path)}</div>',
-                        unsafe_allow_html=True,
-                    )
-                    _edited = st.text_area(
-                        "Contenido",
-                        value=_config_content,
-                        key=_config_key,
-                        height=250,
-                        label_visibility="collapsed",
-                    )
-                    _col_save, _col_cancel = st.columns(2)
-                    with _col_save:
-                        if st.button("💾 Guardar", key=f"cfg_save_{dag_id}"):
-                            try:
-                                yaml.safe_load(_edited)
-                                atomic_write(_config_path, _edited)
-                                st.success("✅ Configuración guardada")
-                            except yaml.YAMLError as e:
-                                st.error(f"❌ YAML inválido — no se guardó: {e}")
-                            except Exception as e:
-                                st.error(f"Error al guardar: {e}")
-                    with _col_cancel:
-                        if st.button("✕ Cerrar", key=f"cfg_close_{dag_id}"):
-                            st.session_state[_config_show_key] = False
-                            st.rerun()
-                except Exception as e:
-                    st.error(f"Error al leer config: {e}")
-            else:
-                st.warning(f"⚠️ Config no encontrado: {_config_path}")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # ── Log display ──
-        _log_key = f"log_data_{dag_id}"
-        if _log_key in st.session_state:
-            st.markdown(
-                '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);'
-                'border-radius:10px;padding:12px 14px;margin:8px 0;">',
-                unsafe_allow_html=True,
-            )
-            _col_title, _col_close = st.columns([5, 1])
-            with _col_title:
                 st.markdown(
-                    '<span style="font-family:monospace;font-size:10px;letter-spacing:1px;'
-                    'text-transform:uppercase;color:#6b7280;">📄 Log — última ejecución</span>',
+                    f'<div style="display:flex;align-items:center;gap:6px;margin:4px 0 2px;padding-left:18px;'
+                    f'flex-wrap:wrap;">'
+                    f'{_mode_badge}{_pause_badge}'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
-            with _col_close:
-                if st.button("✕", key=f"close_log_{dag_id}"):
-                    del st.session_state[_log_key]
-                    st.rerun()
-            st.code(st.session_state[_log_key], language="log")
-            st.markdown('</div>', unsafe_allow_html=True)
+                if project_path:
+                    st.markdown(
+                        f'<div style="padding-left:18px;">'
+                        f'<span style="color:#4b5563;font-size:0.72em;font-family:monospace;">'
+                        f'📁 {safe_html(project_path)}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown('<div style="height:0.72em;"></div>', unsafe_allow_html=True)
 
-        # ── Delete confirmation ──
-        if st.session_state.get(f"confirm_del_{dag_id}"):
+            with _col_right:
+                _play_help = "Ejecutar ahora" if not _is_paused else "DAG pausado — activalo primero"
+                _play_btn_key = f"exec_{dag_id}"
+                if st.button("▶", key=_play_btn_key, use_container_width=True,
+                             disabled=_is_paused, help=_play_help, type="primary"):
+                    try:
+                        result = client.trigger_dag(dag_id)
+                        st.session_state[_exec_key] = result.get("dag_run_id", "")
+                        _get_kharon_dags.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al ejecutar: {e}")
+
+            # ── Divider ──
             st.markdown(
-                '<div style="background:rgba(239,68,68,0.04);border:1px solid rgba(239,68,68,0.12);'
-                'border-radius:12px;padding:12px 16px;margin:4px 0;">',
+                '<div style="height:1px;background:rgba(255,255,255,0.04);margin:8px 0 10px;"></div>',
                 unsafe_allow_html=True,
             )
-            st.warning(f"⚠️ ¿Eliminar el proceso **{dag_id}**? Se borrará el DAG y su archivo. Esta acción no se puede deshacer.")
-            col_yes, col_no = st.columns(2)
-            with col_yes:
-                if st.button("✅ Confirmar eliminación", key=f"del_yes_{dag_id}", type="primary"):
-                    _errors = []
-                    try:
-                        generator = _get_dag_generator()
-                        generator.delete_dag(dag_id)
-                    except Exception as exc:
-                        _errors.append(f"Archivo/registro: {exc}")
-                    try:
-                        client.pause_dag(dag_id, paused=True)
-                        client.delete_dag(dag_id)
-                    except Exception as exc:
-                        _errors.append(f"Airflow API: {exc}")
-                    st.session_state.pop(f"confirm_del_{dag_id}", None)
-                    if _errors:
-                        st.error("Eliminado con errores parciales: " + " | ".join(_errors))
-                    else:
-                        st.toast(f"🗑️ Proceso '{dag_id}' eliminado", icon="🗑️")
-                    st.rerun()
-            with col_no:
-                if st.button("Cancelar", key=f"del_no_{dag_id}"):
-                    st.session_state.pop(f"confirm_del_{dag_id}", None)
-                    st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
-        # ── Timeline chart (collapsible) ──
-        with st.expander("📊 Timeline", expanded=False):
-            _dag_chart_fragment(dag_id)
+            # ── Action bar: 4 buttons with emoji + label ──
+            col_log, col_cfg, col_pause, col_del = st.columns(4)
 
-        # Card close
-        st.markdown('</div>', unsafe_allow_html=True)
+            with col_log:
+                if runs:
+                    last_run_id = runs[0].get("dag_run_id", "")
+                    _log_key = f"log_data_{dag_id}"
+                    if st.button("📄 Log", key=f"log_{dag_id}", use_container_width=True):
+                        try:
+                            tasks = client.list_task_instances(dag_id, last_run_id)
+                            parts = []
+                            for task in tasks:
+                                task_id = task.get("task_id", "")
+                                task_state = task.get("state")
+                                try_n = int(task.get("try_number") or 0)
+                                _NO_LOG = {"queued", "scheduled", "no_status", "none", None}
+                                if task_state in _NO_LOG or try_n == 0:
+                                    parts.append(f"=== {task_id} === [{task_state or 'sin estado'}] sin log todavía")
+                                    continue
+                                try_n = max(try_n, 1)
+                                try:
+                                    log = client.get_task_log(dag_id, last_run_id, task_id, try_n)
+                                    if log:
+                                        parts.append(f"=== {task_id} (intento {try_n}) ===\n{log}")
+                                except AirflowClientError as log_err:
+                                    parts.append(f"=== {task_id} === Error: {log_err}")
+                            st.session_state[_log_key] = "\n\n".join(parts) if parts else "(sin contenido de log)"
+                        except Exception as exc:
+                            st.session_state[_log_key] = f"Error al obtener log: {exc}"
+
+            with col_cfg:
+                if _config_path and st.button("⚙ Config", key=f"cfg_{dag_id}", use_container_width=True):
+                    st.session_state[_config_show_key] = not st.session_state.get(_config_show_key, False)
+
+            with col_pause:
+                _pause_label = "▶️ Activar" if _is_paused else "⏸ Pausar"
+                _pause_type = "primary" if _is_paused else "secondary"
+                if st.button(_pause_label, key=f"pause_{dag_id}", use_container_width=True, type=_pause_type):
+                    try:
+                        client.pause_dag(dag_id, paused=not _is_paused)
+                        _get_kharon_dags.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al cambiar estado: {e}")
+
+            with col_del:
+                if st.button("🗑 Eliminar", key=f"del_{dag_id}", use_container_width=True):
+                    st.session_state[f"confirm_del_{dag_id}"] = True
+
+            # ── Mode switcher (full width, below action bar) ──
+            _script_meta = _registry.get(dag_id, {})
+            _current_mode = _script_meta.get("execution_mode", "on_demand")
+            _has_registry_entry = bool(_script_meta)
+
+            if _has_registry_entry:
+                _mode_key = f"mode_{dag_id}"
+                if _mode_key not in st.session_state:
+                    st.session_state[_mode_key] = _current_mode
+
+                _mode_options = ["on_demand", "continuous", "scheduled"]
+                _mode_labels = {
+                    "on_demand": "🎯 Demanda",
+                    "continuous": "🔄 Continuo",
+                    "scheduled": "📅 Agendado",
+                }
+
+                _new_mode = st.selectbox(
+                    "Modo de ejecución",
+                    options=_mode_options,
+                    index=_mode_options.index(st.session_state[_mode_key]),
+                    format_func=lambda x: _mode_labels.get(x, x),
+                    key=f"mode_sb_{dag_id}",
+                    label_visibility="collapsed",
+                )
+                st.session_state[_mode_key] = _new_mode
+
+                _schedule_val = None
+                if _new_mode == "scheduled":
+                    _sched_key = f"sched_{dag_id}"
+                    _current_sched = _script_meta.get("schedule", "0 6 * * *")
+                    if _sched_key not in st.session_state:
+                        st.session_state[_sched_key] = _current_sched
+                    _schedule_val = st.text_input(
+                        "Cron",
+                        value=st.session_state[_sched_key],
+                        key=f"cron_{dag_id}",
+                        placeholder="0 6 * * *",
+                        label_visibility="collapsed",
+                    )
+                    st.session_state[_sched_key] = _schedule_val
+
+                _mode_changed = _new_mode != _current_mode
+                _sched_changed = _new_mode == "scheduled" and _schedule_val != _script_meta.get("schedule")
+                if _mode_changed or _sched_changed:
+                    if st.button("✓ Aplicar", key=f"apply_mode_{dag_id}", use_container_width=True):
+                        try:
+                            generator = _get_dag_generator()
+                            gen_result = generator.update_execution_mode(
+                                script_id=dag_id,
+                                execution_mode=_new_mode,
+                                schedule=_schedule_val,
+                            )
+                            if gen_result.success:
+                                af_client = _get_airflow_client()
+                                if _new_mode == "on_demand":
+                                    af_client.pause_dag(dag_id, paused=True)
+                                else:
+                                    af_client.pause_dag(dag_id, paused=False)
+                                st.toast(f"✅ Modo actualizado: {_mode_labels.get(_new_mode, _new_mode)}")
+                                st.rerun()
+                            else:
+                                st.error(f"Error: {', '.join(gen_result.errors)}")
+                        except Exception as e:
+                            st.error(f"Error al actualizar modo: {e}")
+
+            # ── Exec banner ──
+            if _exec_key in st.session_state:
+                _dag_exec_banner(dag_id, _exec_key)
+
+            # ── Config editor (expanded) ──
+            if _config_path and st.session_state.get(_config_show_key, False):
+                st.markdown(
+                    '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);'
+                    'border-radius:10px;padding:12px 14px;margin:8px 0;">',
+                    unsafe_allow_html=True,
+                )
+                if os.path.isfile(_config_path):
+                    try:
+                        with open(_config_path, "r", encoding="utf-8") as f:
+                            _config_content = f.read()
+                        st.markdown(
+                            f'<div style="font-family:monospace;font-size:10px;color:#6b7280;'
+                            f'letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">'
+                            f'{safe_html(_config_path)}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        _edited = st.text_area(
+                            "Contenido",
+                            value=_config_content,
+                            key=_config_key,
+                            height=250,
+                            label_visibility="collapsed",
+                        )
+                        _col_save, _col_cancel = st.columns(2)
+                        with _col_save:
+                            if st.button("💾 Guardar", key=f"cfg_save_{dag_id}"):
+                                try:
+                                    if len(_edited) > 500_000:
+                                        st.error("❌ Archivo demasiado grande (máx. 500 KB).")
+                                        st.stop()
+                                    yaml.safe_load(_edited)
+                                    atomic_write(_config_path, _edited)
+                                    st.success("✅ Configuración guardada")
+                                except yaml.YAMLError as e:
+                                    st.error(f"❌ YAML inválido — no se guardó: {e}")
+                                except Exception as e:
+                                    st.error(f"Error al guardar: {e}")
+                        with _col_cancel:
+                            if st.button("✕ Cerrar", key=f"cfg_close_{dag_id}"):
+                                st.session_state[_config_show_key] = False
+                                st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al leer config: {e}")
+                else:
+                    st.warning(f"⚠️ Config no encontrado: {_config_path}")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ── Log display ──
+            _log_key = f"log_data_{dag_id}"
+            if _log_key in st.session_state:
+                st.markdown(
+                    '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);'
+                    'border-radius:10px;padding:12px 14px;margin:8px 0;">',
+                    unsafe_allow_html=True,
+                )
+                _col_title, _col_close = st.columns([5, 1])
+                with _col_title:
+                    st.markdown(
+                        '<span style="font-family:monospace;font-size:10px;letter-spacing:1px;'
+                        'text-transform:uppercase;color:#6b7280;">📄 Log — última ejecución</span>',
+                        unsafe_allow_html=True,
+                    )
+                with _col_close:
+                    if st.button("✕", key=f"close_log_{dag_id}"):
+                        del st.session_state[_log_key]
+                        st.rerun()
+                st.code(st.session_state[_log_key], language="log")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ── Delete confirmation ──
+            if st.session_state.get(f"confirm_del_{dag_id}"):
+                st.markdown(
+                    '<div style="background:rgba(239,68,68,0.04);border:1px solid rgba(239,68,68,0.12);'
+                    'border-radius:12px;padding:12px 16px;margin:4px 0;">',
+                    unsafe_allow_html=True,
+                )
+                st.warning(f"⚠️ ¿Eliminar el proceso **{dag_id}**? Se borrará el DAG y su archivo. Esta acción no se puede deshacer.")
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button("✅ Confirmar eliminación", key=f"del_yes_{dag_id}", type="primary"):
+                        _errors = []
+                        try:
+                            generator = _get_dag_generator()
+                            generator.delete_dag(dag_id)
+                        except Exception as exc:
+                            _errors.append(f"Archivo/registro: {exc}")
+                        try:
+                            client.pause_dag(dag_id, paused=True)
+                            client.delete_dag(dag_id)
+                        except Exception as exc:
+                            _errors.append(f"Airflow API: {exc}")
+                        st.session_state.pop(f"confirm_del_{dag_id}", None)
+                        if _errors:
+                            st.error("Eliminado con errores parciales: " + " | ".join(_errors))
+                        else:
+                            st.toast(f"🗑️ Proceso '{dag_id}' eliminado", icon="🗑️")
+                        st.rerun()
+                with col_no:
+                    if st.button("Cancelar", key=f"del_no_{dag_id}"):
+                        st.session_state.pop(f"confirm_del_{dag_id}", None)
+                        st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ── Timeline chart (collapsible) ──
+            with st.expander("📊 Timeline", expanded=False):
+                _dag_chart_fragment(dag_id)
 
     # ── Render summary bar now that all runs have been fetched ──
     _summary_parts = []
@@ -1784,7 +1768,7 @@ def _page_view_logs() -> None:
 
     try:
         client = _get_airflow_client()
-        kharon_dags, _ = _get_kharon_dags()
+        kharon_dags = _get_kharon_dag_list()
     except AirflowClientError as e:
         st.error(f"Error al conectar con Airflow: {e}")
         return
@@ -2216,12 +2200,12 @@ def _page_new_script() -> None:
         st.warning("No hay clientes registrados. Creá uno primero en ⚙️ Configuración.")
 
     try:
-        kharon_dags, _ = _get_kharon_dags()
+        kharon_dags = _get_kharon_dag_list()
     except AirflowClientError:
         kharon_dags = []
 
     existing_scripts = []
-    _gen_registry = _get_dag_generator()._load_registry()
+    _gen_registry = _get_dag_generator().get_all_scripts()
     _existing_ids = set(_gen_registry.keys())
     for d in kharon_dags:
         _tags = [t.get("name", "") if isinstance(t, dict) else t for t in d.get("tags", [])]
@@ -2370,6 +2354,7 @@ def _page_configuration() -> None:
                     try:
                         cm = _get_client_manager()
                         cm.delete_client(cid)
+                        _get_clients.clear()
                         st.toast(f"🗑️ Cliente '{selected}' eliminado", icon="🗑️")
                         st.rerun()
                     except Exception as e:
@@ -2434,9 +2419,10 @@ def _page_configuration() -> None:
                     "icon": "",
                     "logo_path": logo_path,
                     "description": new_description,
-                    "contact_email": f"admin@{client_id}.com",
+                    "contact_email": "",
                     "contact_name": clean_name,
                 })
+                _get_clients.clear()
                 st.toast(f"✅ Cliente '{clean_name}' creado exitosamente", icon="✅")
                 st.rerun()
             except Exception as e:
@@ -2460,11 +2446,15 @@ def _page_configuration() -> None:
             }
             for key, val in registry_info.items():
                 label = label_map.get(key, key.replace("_", " ").title())
+                if isinstance(val, bool):
+                    _display_val = "✅ Sí" if val else "❌ No"
+                else:
+                    _display_val = safe_html(str(val))
                 info_html += (
                     f'<div style="display:flex;justify-content:space-between;padding:6px 0;'
                     f'border-bottom:1px solid #1E2632;">'
                     f'<span style="color:#9ca3af;font-size:0.85em;">{safe_html(label)}</span>'
-                    f'<span style="color:#e5e7eb;font-size:0.85em;font-family:JetBrains Mono,monospace;">{safe_html(val)}</span>'
+                    f'<span style="color:#e5e7eb;font-size:0.85em;font-family:JetBrains Mono,monospace;">{_display_val}</span>'
                     f'</div>'
                 )
             info_html += '</div>'

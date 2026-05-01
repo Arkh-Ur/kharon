@@ -6,6 +6,7 @@ Generates Airflow DAG files from script metadata and manages script registry.
 
 import os
 import re
+import threading
 import yaml
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,7 +43,8 @@ class DAGGenerator:
         """
         self.dags_dir = dags_dir or config.DAGS_DIR
         self.registry_path = registry_path or config.GENERATED_SCRIPTS_PATH
-        
+        self._lock = threading.RLock()
+
         # Ensure directories exist
         self.dags_dir.mkdir(parents=True, exist_ok=True)
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,69 +90,70 @@ class DAGGenerator:
         result = DAGGenerationResult(success=False)
         
         try:
-            # Sanitize script ID first
-            sanitized_script_id = self._sanitize_script_id(script_id)
+            with self._lock:
+                # Sanitize script ID first
+                sanitized_script_id = self._sanitize_script_id(script_id)
 
-            # Validate sanitized script ID (catches reserved words after normalization)
-            validation_error = self._validate_script_id(sanitized_script_id)
-            if validation_error:
-                result.errors.append(f"Script ID validation failed: {validation_error}")
+                # Validate sanitized script ID (catches reserved words after normalization)
+                validation_error = self._validate_script_id(sanitized_script_id)
+                if validation_error:
+                    result.errors.append(f"Script ID validation failed: {validation_error}")
+                    return result
+                
+                # Validate script exists
+                script_file = Path(os.path.expanduser(script_path))
+                if not script_file.exists():
+                    result.errors.append(f"Script file not found: {script_path}")
+                    return result
+                
+                # Check if script has valid extension
+                if script_file.suffix.lower() not in ['.py', '.sh', '.bash']:
+                    result.errors.append(f"Unsupported script extension: {script_file.suffix}")
+                    return result
+                
+                # Generate DAG content
+                dag_content = self._generate_dag_content(
+                    sanitized_script_id,
+                    script_name,
+                    script_file,
+                    client_id,
+                    timeout,
+                    retries,
+                    schedule,
+                    criticality,
+                    tags,
+                    python,
+                    execution_mode,
+                    config_file
+                )
+                
+                # Write DAG file
+                dag_file_path = self.dags_dir / f"{sanitized_script_id}.py"
+                atomic_write(str(dag_file_path), dag_content)
+                
+                registry_entry = {
+                    "script_id": sanitized_script_id,
+                    "script_name": script_name,
+                    "script_path": str(script_file),
+                    "client_id": client_id,
+                    "timeout": timeout,
+                    "retries": retries,
+                    "schedule": schedule,
+                    "criticality": criticality,
+                    "tags": tags or [],
+                    "python": python,
+                    "execution_mode": execution_mode,
+                    "config_file": config_file,
+                    "project_path": project_path,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                self._update_registry(registry_entry)
+                
+                result.success = True
+                result.dag_id = sanitized_script_id
+                result.file_path = str(dag_file_path)
+                
                 return result
-            
-            # Validate script exists
-            script_file = Path(os.path.expanduser(script_path))
-            if not script_file.exists():
-                result.errors.append(f"Script file not found: {script_path}")
-                return result
-            
-            # Check if script has valid extension
-            if script_file.suffix.lower() not in ['.py', '.sh', '.bash']:
-                result.errors.append(f"Unsupported script extension: {script_file.suffix}")
-                return result
-            
-            # Generate DAG content
-            dag_content = self._generate_dag_content(
-                sanitized_script_id,
-                script_name,
-                script_file,
-                client_id,
-                timeout,
-                retries,
-                schedule,
-                criticality,
-                tags,
-                python,
-                execution_mode,
-                config_file
-            )
-            
-            # Write DAG file
-            dag_file_path = self.dags_dir / f"{sanitized_script_id}.py"
-            atomic_write(str(dag_file_path), dag_content)
-            
-            registry_entry = {
-                "script_id": sanitized_script_id,
-                "script_name": script_name,
-                "script_path": str(script_file),
-                "client_id": client_id,
-                "timeout": timeout,
-                "retries": retries,
-                "schedule": schedule,
-                "criticality": criticality,
-                "tags": tags or [],
-                "python": python,
-                "execution_mode": execution_mode,
-                "config_file": config_file,
-                "project_path": project_path,
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }
-            self._update_registry(registry_entry)
-            
-            result.success = True
-            result.dag_id = sanitized_script_id
-            result.file_path = str(dag_file_path)
-            
-            return result
             
         except Exception as e:
             result.errors.append(f"Unexpected error: {str(e)}")
@@ -175,53 +178,53 @@ class DAGGenerator:
             DAGGenerationResult with operation status
         """
         result = DAGGenerationResult(success=False)
-        
+
         try:
-            registry_data = self._load_registry()
-            
-            if script_id not in registry_data:
-                result.errors.append(f"Script not found in registry: {script_id}")
-                return result
-            
-            entry = registry_data[script_id]
-            
-            entry["execution_mode"] = execution_mode
-            entry["schedule"] = schedule if execution_mode == "scheduled" else None
-            
-            _raw_path = entry.get("script_path")
-            if not _raw_path:
-                result.errors.append(f"No script_path found in registry for: {script_id}")
-                return result
-            script_file = Path(_raw_path)
-            if not script_file.exists():
-                result.errors.append(f"Script file not found: {_raw_path}")
-                return result
-            
-            dag_content = self._generate_dag_content(
-                dag_id=script_id,
-                script_name=entry.get("script_name", script_id),
-                script_file=script_file,
-                client_id=entry.get("client_id", ""),
-                timeout=entry.get("timeout", 3600),
-                retries=entry.get("retries", 2),
-                schedule=entry["schedule"],
-                criticality=entry.get("criticality", "media"),
-                tags=entry.get("tags", []),
-                python=entry.get("python", "python3"),
-                execution_mode=execution_mode,
-                config_file=entry.get("config_file"),
-            )
-            
-            dag_file_path = self.dags_dir / f"{script_id}.py"
-            atomic_write(str(dag_file_path), dag_content)
-            
-            registry_data[script_id] = entry
-            self._save_registry(registry_data)
-            
+            with self._lock:
+                registry_data = self._load_registry()
+
+                if script_id not in registry_data:
+                    result.errors.append(f"Script not found in registry: {script_id}")
+                    return result
+
+                entry = registry_data[script_id]
+                entry["execution_mode"] = execution_mode
+                entry["schedule"] = schedule if execution_mode == "scheduled" else None
+
+                _raw_path = entry.get("script_path")
+                if not _raw_path:
+                    result.errors.append(f"No script_path found in registry for: {script_id}")
+                    return result
+                script_file = Path(_raw_path)
+                if not script_file.exists():
+                    result.errors.append(f"Script file not found: {_raw_path}")
+                    return result
+
+                dag_content = self._generate_dag_content(
+                    dag_id=script_id,
+                    script_name=entry.get("script_name", script_id),
+                    script_file=script_file,
+                    client_id=entry.get("client_id", ""),
+                    timeout=entry.get("timeout", 3600),
+                    retries=entry.get("retries", 2),
+                    schedule=entry["schedule"],
+                    criticality=entry.get("criticality", "media"),
+                    tags=entry.get("tags", []),
+                    python=entry.get("python", "python3"),
+                    execution_mode=execution_mode,
+                    config_file=entry.get("config_file"),
+                )
+
+                dag_file_path = self.dags_dir / f"{script_id}.py"
+                atomic_write(str(dag_file_path), dag_content)
+
+                registry_data[script_id] = entry
+                self._save_registry(registry_data)
+
             result.success = True
             result.dag_id = script_id
             result.file_path = str(dag_file_path)
-            
+
             return result
             
         except Exception as e:
@@ -378,41 +381,20 @@ dag = DAG(
         return dag_content.strip()
     
     def _update_registry(self, entry: Dict) -> None:
-        """Update scripts registry with new entry.
-        
-        Args:
-            entry: Registry entry to add
-            
-        Raises:
-            IOError: If file operations fail
-        """
         try:
-            # Load existing registry
-            registry_data = self._load_registry()
-            
-            # Add/update entry
-            registry_data[entry["script_id"]] = entry
-            
-            # Save registry
-            self._save_registry(registry_data)
-            
+            with self._lock:
+                registry_data = self._load_registry()
+                registry_data[entry["script_id"]] = entry
+                self._save_registry(registry_data)
         except Exception as e:
             raise IOError(f"Failed to update registry: {e}") from e
-    
+
     def _remove_from_registry(self, script_id: str) -> None:
-        """Remove entry from scripts registry.
-        
-        Args:
-            script_id: Script identifier to remove
-            
-        Raises:
-            IOError: If file operations fail
-        """
         try:
-            registry_data = self._load_registry()
-            
-            if script_id in registry_data:
-                del registry_data[script_id]
+            with self._lock:
+                registry_data = self._load_registry()
+                if script_id in registry_data:
+                    del registry_data[script_id]
                 
                 self._save_registry(registry_data)
                 
@@ -534,3 +516,8 @@ dag = DAG(
                 "registry_path": str(self.registry_path),
                 "dags_directory": str(self.dags_dir),
             }
+
+    def get_all_scripts(self) -> Dict:
+        """Return all registered scripts from the registry."""
+        with self._lock:
+            return self._load_registry()

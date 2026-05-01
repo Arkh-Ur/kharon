@@ -17,9 +17,24 @@ def safe_html(text: str) -> str:
     return html.escape(str(text))
 
 
+_AIRFLOW_ALIASES = {
+    "@hourly": "Cada hora",
+    "@daily": "Todos los días a las 00:00",
+    "@weekly": "Cada domingo a las 00:00",
+    "@monthly": "El día 1 de cada mes a las 00:00",
+    "@yearly": "El 1 de enero a las 00:00",
+    "@annually": "El 1 de enero a las 00:00",
+    "@continuous": "Continuo — se re-ejecuta al terminar",
+    "@once": "Una sola vez",
+}
+
+
 def describe_cron(expr: str) -> str:
     """Human-readable Spanish description of a cron expression."""
-    parts = expr.strip().split()
+    stripped = expr.strip()
+    if stripped in _AIRFLOW_ALIASES:
+        return _AIRFLOW_ALIASES[stripped]
+    parts = stripped.split()
     if len(parts) != 5:
         return expr
     minute, hour, dom, month, dow = parts

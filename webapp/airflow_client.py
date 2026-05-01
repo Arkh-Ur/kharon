@@ -4,6 +4,7 @@ Uses JWT cookie-based auth via /api/v2/auth/login flow.
 """
 
 import json
+import threading
 from typing import Dict, List, Optional, Any
 import requests
 from requests.exceptions import RequestException
@@ -41,6 +42,7 @@ class AirflowClient:
             'Content-Type': 'application/json',
             'Accept': 'application/json',
         })
+        self._session_lock = threading.RLock()
         self._authenticate()
 
     def _authenticate(self) -> None:
@@ -65,35 +67,30 @@ class AirflowClient:
 
     def _request(self, method: str, endpoint: str, **kwargs) -> Dict:
         url = f"{self.base_url}{endpoint}"
-
-        if not self.session.cookies:
-            self._authenticate()
-
-        try:
-            response = self.session.request(method, url, timeout=30, **kwargs)
-
-            if response.status_code == 401:
+        with self._session_lock:
+            if not self.session.cookies:
                 self._authenticate()
+            try:
                 response = self.session.request(method, url, timeout=30, **kwargs)
-
-            if not response.ok:
-                try:
-                    error_data = response.json()
-                except (ValueError, json.JSONDecodeError):
-                    error_data = {"error": response.text}
-
-                raise AirflowClientError(
-                    f"Request failed: {response.status_code} {response.reason}",
-                    status_code=response.status_code,
-                    response=error_data,
-                )
-
-            if response.text.strip():
-                return response.json()
-            return {}
-
-        except RequestException as e:
-            raise AirflowClientError(f"Request failed: {str(e)}") from e
+                if response.status_code == 401:
+                    self._authenticate()
+                    response = self.session.request(method, url, timeout=30, **kwargs)
+            except RequestException as e:
+                raise AirflowClientError(f"Request failed: {str(e)}") from e
+        # Error handling for non-ok responses stays outside the lock
+        if not response.ok:
+            try:
+                error_data = response.json()
+            except (ValueError, json.JSONDecodeError):
+                error_data = {"error": response.text}
+            raise AirflowClientError(
+                f"Request failed: {response.status_code} {response.reason}",
+                status_code=response.status_code,
+                response=error_data,
+            )
+        if response.text.strip():
+            return response.json()
+        return {}
 
     def health_check(self) -> Dict:
         return self._request("GET", f"{self.API_PREFIX}/monitor/health")
