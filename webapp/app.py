@@ -1244,39 +1244,38 @@ def _pending_deployments_fragment(pending: list) -> None:
         _mode_pill_colors = {"on_demand": "#6b7280", "continuous": "#3b82f6", "scheduled": "#f59e0b"}
         _pill = _mode_pill_labels.get(_p_mode, "Demanda")
         _pill_c = _mode_pill_colors.get(_p_mode, "#6b7280")
-        col_content, col_buttons = st.columns([100, 1])
-        with col_content:
-            st.markdown(
-                f'<div style="background:#111827;border:1px solid rgba(245,158,11,0.15);'
-                f'border-radius:12px;padding:14px 18px;margin-bottom:8px;'
-                f'display:flex;align-items:center;gap:12px;">'
-                f'<div style="animation:kharon-pulse 1.5s ease-in-out infinite;'
-                f'width:10px;height:10px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></div>'
-                f'<div style="flex:1;min-width:0;">'
-                f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
-                f'<span style="font-weight:600;color:#e5e7eb;">{_p_name}</span>'
-                f'<span style="font-family:monospace;font-size:10px;padding:2px 8px;'
-                f'border-radius:99px;background:rgba({_hex_to_rgb(_pill_c)},.06);'
-                f'border:1px solid rgba({_hex_to_rgb(_pill_c)},.2);color:{_pill_c};'
-                f'white-space:nowrap;">{_pill}</span>'
-                f'<span style="color:#6b7280;font-size:0.75em;font-family:monospace;">{_p_client}</span>'
-                f'</div>'
-                f'<div style="color:#f59e0b;font-size:10px;font-family:monospace;'
-                f'letter-spacing:1px;text-transform:uppercase;margin-top:4px;'
-                f'animation:kharon-pulse 1.5s ease-in-out infinite;">'
-                f'⏳ Desplegando — DAG: {safe_html(_sid)}.py</div>'
-                f'</div>'
-                f'<div style="color:#6b7280;font-size:10px;font-family:monospace;'
-                f'white-space:nowrap;">~30s</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        with col_buttons:
-            if st.button("🗑", key=f"del_pending_{_sid}", use_container_width=True):
-                generator = _get_dag_generator()
-                generator.delete_dag(_sid)
-                _get_kharon_dags.clear()
-                st.rerun(scope="app")
+        # Banner with embedded stop button — all inside one div
+        st.markdown(
+            f'<div style="background:#111827;border:1px solid rgba(245,158,11,0.15);'
+            f'border-radius:12px;padding:14px 18px;margin-bottom:8px;'
+            f'display:flex;align-items:center;gap:12px;">'
+            f'<div style="animation:kharon-pulse 1.5s ease-in-out infinite;'
+            f'width:10px;height:10px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></div>'
+            f'<div style="flex:1;min-width:0;">'
+            f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+            f'<span style="font-weight:600;color:#e5e7eb;">{_p_name}</span>'
+            f'<span style="font-family:monospace;font-size:10px;padding:2px 8px;'
+            f'border-radius:99px;background:rgba({_hex_to_rgb(_pill_c)},.06);'
+            f'border:1px solid rgba({_hex_to_rgb(_pill_c)},.2);color:{_pill_c};'
+            f'white-space:nowrap;">{_pill}</span>'
+            f'<span style="color:#6b7280;font-size:0.75em;font-family:monospace;">{_p_client}</span>'
+            f'</div>'
+            f'<div style="color:#f59e0b;font-size:10px;font-family:monospace;'
+            f'letter-spacing:1px;text-transform:uppercase;margin-top:4px;'
+            f'animation:kharon-pulse 1.5s ease-in-out infinite;">'
+            f'⏳ Desplegando — DAG: {safe_html(_sid)}.py</div>'
+            f'</div>'
+            f'<div style="color:#6b7280;font-size:10px;font-family:monospace;'
+            f'white-space:nowrap;">~30s</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        # Stop button inside the banner area (same column, below the div)
+        if st.button(f"🗑 Cancelar despliegue", key=f"del_pending_{_sid}", use_container_width=True):
+            generator = _get_dag_generator()
+            generator.delete_dag(_sid)
+            _get_kharon_dags.clear()
+            st.rerun(scope="app")
 
 
 # ─── Page: Procesos ────────────────────────────────────────────────────────────
