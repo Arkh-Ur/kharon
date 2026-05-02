@@ -1470,7 +1470,7 @@ def _page_processes() -> None:
                 if not any(_resolved.is_relative_to(r) for r in _allowed_roots):
                     _config_path = None
 
-            # ── Header: LEFT (info stacked) / RIGHT (Ejecutar button) ──
+            # ── Header: LEFT (title + badges) / RIGHT (play button) — always visible ──
             _col_left, _col_right = st.columns([5, 1])
 
             with _col_left:
@@ -1491,16 +1491,6 @@ def _page_processes() -> None:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-                if project_path:
-                    st.markdown(
-                        f'<div style="padding-left:18px;">'
-                        f'<span style="color:#4b5563;font-size:0.72em;font-family:monospace;">'
-                        f'📁 {safe_html(project_path)}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown('<div style="height:0.72em;"></div>', unsafe_allow_html=True)
 
             with _col_right:
                 _play_help = "Ejecutar ahora" if not _is_paused else "DAG pausado — activalo primero"
@@ -1516,14 +1506,27 @@ def _page_processes() -> None:
                     except Exception as e:
                         st.error(f"Error al ejecutar: {e}")
 
-            # ── Divider ──
-            st.markdown(
-                '<div style="height:1px;background:rgba(255,255,255,0.04);margin:8px 0 10px;"></div>',
-                unsafe_allow_html=True,
-            )
+            # ── Exec banner (fuera del expander — visible siempre) ──
+            if _exec_key in st.session_state:
+                _dag_exec_banner(dag_id, _exec_key)
 
-            # ── Action bar: 4 buttons with emoji + label ──
-            col_log, col_cfg, col_pause, col_del = st.columns(4)
+            # ── Collapsible: directorio + botones + agendamiento + timeline ──
+            with st.expander("Detalles", expanded=False):
+
+                if project_path:
+                    st.markdown(
+                        f'<span style="color:#4b5563;font-size:0.72em;font-family:monospace;">'
+                        f'📁 {safe_html(project_path)}</span>',
+                        unsafe_allow_html=True,
+                    )
+
+                st.markdown(
+                    '<div style="height:1px;background:rgba(255,255,255,0.04);margin:6px 0 8px;"></div>',
+                    unsafe_allow_html=True,
+                )
+
+                # ── Action bar ──
+                col_log, col_cfg, col_pause, col_del = st.columns(4)
 
             with col_log:
                 if runs:
@@ -1639,10 +1642,6 @@ def _page_processes() -> None:
                                 st.error(f"Error: {', '.join(gen_result.errors)}")
                         except Exception as e:
                             st.error(f"Error al actualizar modo: {e}")
-
-            # ── Exec banner ──
-            if _exec_key in st.session_state:
-                _dag_exec_banner(dag_id, _exec_key)
 
             # ── Config editor (expanded) ──
             if st.session_state.get(_config_show_key, False):
@@ -1776,9 +1775,9 @@ def _page_processes() -> None:
                         st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
-            # ── Timeline chart (collapsible) ──
-            with st.expander("📊 Timeline", expanded=False):
-                _dag_chart_fragment(dag_id)
+                # ── Timeline chart (nested dentro del expander de detalles) ──
+                with st.expander("📊 Timeline", expanded=False):
+                    _dag_chart_fragment(dag_id)
 
     # ── Render summary bar now that all runs have been fetched ──
     _summary_parts = []
