@@ -3,7 +3,7 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-IMAGE="${KHARON_IMAGE:-kharon:latest}"
+IMAGE="${KHARON_IMAGE:-ghcr.io/arkh-ur/kharon:latest}"
 AUTO_UPDATE="${AUTO_UPDATE:-false}"
 
 # Build image if it doesn't exist yet

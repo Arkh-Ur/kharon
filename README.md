@@ -65,30 +65,38 @@ Airflow no tiene soporte oficial nativo en Windows. Hay dos métodos recomendado
 
 ### Método 1: Podman — All-in-One (recomendado)
 
-Airflow y la webapp Kharōn corren juntos en un único contenedor. El código se clona automáticamente desde GitHub durante el build.
+Airflow, PostgreSQL y la webapp Kharōn corren juntos en un único contenedor.
+La imagen se construye automáticamente en GitHub Actions y se publica en `ghcr.io`.
 
 #### Requisitos
 
 - [Podman](https://podman.io/) o [Podman Desktop](https://podman-desktop.io/)
 
-#### Inicio rápido
+#### Inicio rápido (imagen pre-construida)
 
-```powershell
+```bash
+# Descargar imagen publicada en GitHub Container Registry
+podman pull ghcr.io/arkh-ur/kharon:latest
+
+# Clonar solo para obtener airflow_home/ (datos persistentes)
 git clone https://github.com/Arkh-Ur/kharon.git
 cd kharon
 
-# Construir la imagen (clona el repo de GitHub)
-podman build -t kharon:latest .
-
 # Iniciar
-.\podman-run.sh       # Linux/macOS
-.\start_kharon.ps1 -Podman   # Windows
+chmod +x podman-run.sh && ./podman-run.sh        # Linux/macOS
+.\start_kharon.ps1 -Podman                        # Windows
 ```
 
 | Servicio | URL |
 |---|---|
 | Kharōn Webapp | http://localhost:8501 |
 | Airflow UI / API | http://localhost:8080 |
+
+#### Construir la imagen localmente (opcional)
+
+```bash
+podman build -t ghcr.io/arkh-ur/kharon:latest .
+```
 
 #### Mantener actualizado
 
