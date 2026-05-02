@@ -572,7 +572,13 @@ def _init_session_state() -> None:
 
 @st.cache_resource
 def _get_airflow_client() -> AirflowClient:
-    return AirflowClient()
+    _cfg = config.load_kharon_config()
+    _host = _cfg.get("airflow_host", config.AIRFLOW_HOST)
+    _port = _cfg.get("airflow_port", str(config.AIRFLOW_PORT))
+    _user = _cfg.get("airflow_user", config.AIRFLOW_USER)
+    _pass = _cfg.get("airflow_password", config.AIRFLOW_PASSWORD)
+    _url = f"http://{_host}:{_port}"
+    return AirflowClient(base_url=_url, username=_user, password=_pass)
 
 
 @st.cache_resource
@@ -2290,27 +2296,60 @@ def _page_configuration() -> None:
     col_config, col_health = st.columns(2)
 
     with col_config:
-        st.subheader("Configuración Actual")
-        env_info = {
-            "app_name": config.APP_NAME,
-            "company": config.COMPANY,
-            "airflow_url": config.AIRFLOW_BASE_URL,
-            "airflow_host": config.AIRFLOW_HOST,
-            "airflow_port": config.AIRFLOW_PORT,
-            "kharon_port": config.KHARON_PORT,
-            "project_root": str(config.PROJECT_ROOT),
-            "dags_dir": str(config.DAGS_DIR),
-            "external_scripts_dir": str(config.EXTERNAL_SCRIPTS_DIR),
-        }
-        for key, val in env_info.items():
-            st.markdown(
-                f'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;'
-                f'border-bottom:1px solid rgba(255,255,255,0.04);">'
-                f'<span style="color:#6b7280;font-size:10px;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">{safe_html(key)}</span>'
-                f'<span style="color:#9ca3af;font-size:0.8em;font-family:monospace;word-break:break-all;max-width:60%;text-align:right;">{safe_html(val)}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+        st.subheader("Conexión con Airflow")
+
+        _saved_cfg = config.load_kharon_config()
+
+        _cfg_host = st.text_input("Host", value=config.AIRFLOW_HOST, key="cfg_af_host")
+        _cfg_port = st.text_input("Puerto", value=str(config.AIRFLOW_PORT), key="cfg_af_port")
+        _cfg_user = st.text_input("Usuario", value=config.AIRFLOW_USER, key="cfg_af_user")
+        _cfg_pass = st.text_input("Contraseña", value=config.AIRFLOW_PASSWORD, key="cfg_af_pass", type="password")
+
+        st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+        st.subheader("Directorio de DAGs de Airflow")
+
+        _current_dags_dir = str(config.get_dags_dir())
+        _cfg_dags_dir = st.text_input(
+            "Ruta donde Airflow lee los DAGs",
+            value=_current_dags_dir,
+            key="cfg_airflow_dags_dir",
+        )
+        _cfg_dags_path = Path(_cfg_dags_dir.strip()) if _cfg_dags_dir.strip() else None
+        if _cfg_dags_path and not _cfg_dags_path.is_dir():
+            st.caption("⚠️ El directorio no existe — se creará al guardar")
+        elif _cfg_dags_path:
+            _dag_count = len([f for f in _cfg_dags_path.glob("*.py") if not f.name.startswith("_")])
+            st.caption(f"✅ Directorio válido — {_dag_count} DAGs")
+
+        _cfg_source = "env var KHARON_AIRFLOW_DAGS_DIR" if os.getenv("KHARON_AIRFLOW_DAGS_DIR") else (
+            "kharon_config.yaml" if _saved_cfg.get("airflow_dags_dir") else "default (airflow_home/dags)"
+        )
+        st.caption(f"Fuente: {_cfg_source}")
+
+        _changed = (
+            _cfg_host != config.AIRFLOW_HOST
+            or _cfg_port != str(config.AIRFLOW_PORT)
+            or _cfg_user != config.AIRFLOW_USER
+            or _cfg_pass != config.AIRFLOW_PASSWORD
+            or (_cfg_dags_path and str(_cfg_dags_path) != _current_dags_dir)
+        )
+        if _changed and st.button("💾 Guardar configuración", key="save_all_config", use_container_width=True, type="primary"):
+            _new_cfg = {}
+            if _cfg_dags_path and str(_cfg_dags_path) != _current_dags_dir:
+                _cfg_dags_path.mkdir(parents=True, exist_ok=True)
+                _new_cfg["airflow_dags_dir"] = str(_cfg_dags_path)
+            _new_cfg["airflow_host"] = _cfg_host
+            _new_cfg["airflow_port"] = _cfg_port
+            _new_cfg["airflow_user"] = _cfg_user
+            _new_cfg["airflow_password"] = _cfg_pass
+            config.save_kharon_config(_new_cfg)
+            _get_airflow_client.clear()
+            _get_kharon_dags.clear()
+            _get_kharon_dag_list.clear()
+            st.toast("✅ Configuración guardada", icon="✅")
+            st.rerun()
+
+        st.caption(f"Proyecto: {config.PROJECT_ROOT}")
 
     with col_health:
         st.subheader("Estado de Airflow")

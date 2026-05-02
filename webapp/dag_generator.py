@@ -41,7 +41,7 @@ class DAGGenerator:
             dags_dir: Directory for DAG files. If None, uses config.DAGS_DIR
             registry_path: Path for scripts registry. If None, uses config.SCRIPTS_REGISTRY_PATH
         """
-        self.dags_dir = dags_dir or config.DAGS_DIR
+        self.dags_dir = dags_dir or config.get_dags_dir()
         self.registry_path = registry_path or config.GENERATED_SCRIPTS_PATH
         self._lock = threading.RLock()
 
