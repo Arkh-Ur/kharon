@@ -92,14 +92,21 @@ check_prerequisites() {
 
 init_airflow() {
     log_info "Initializing Airflow..."
-    
-    mkdir -p "$AIRFLOW_HOME/dags"
-    mkdir -p "$AIRFLOW_HOME/logs"
-    mkdir -p "$AIRFLOW_HOME/logs/kharon_monitoring"
-    mkdir -p "$AIRFLOW_HOME/data"
-    
+
+    mkdir -p "$AIRFLOW_HOME/dags" "$AIRFLOW_HOME/logs" \
+             "$AIRFLOW_HOME/logs/kharon_monitoring" \
+             "$AIRFLOW_HOME/data" "$AIRFLOW_HOME/plugins"
+
+    # Override airflow.cfg paths via env vars — no hardcoded paths
+    export AIRFLOW__CORE__DAGS_FOLDER="${AIRFLOW_HOME}/dags"
+    export AIRFLOW__CORE__PLUGINS_FOLDER="${AIRFLOW_HOME}/plugins"
+    export AIRFLOW__CORE__LOAD_EXAMPLES="false"
+    export AIRFLOW__CORE__EXECUTOR="LocalExecutor"
+    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AIRFLOW_HOME}/airflow.db"
+    export AIRFLOW__LOGGING__BASE_LOG_FOLDER="${AIRFLOW_HOME}/logs"
+
     airflow db migrate 2>&1 | tail -1 || log_warn "Airflow DB migration issue"
-    
+
     log_info "Airflow initialized"
 }
 

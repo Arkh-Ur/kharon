@@ -8,6 +8,8 @@ import dataclasses
 import json
 import logging
 import os
+import platform
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -167,9 +169,20 @@ class ScriptRunner:
             Command to use for script execution ("python3" or "bash")
         """
         path_obj = Path(script_path)
-        
+
         if path_obj.suffix.lower() in ['.sh', '.bash']:
+            # On Windows, look for bash (Git Bash, WSL, or Cygwin)
+            if platform.system() == 'Windows':
+                for candidate in ['bash', 'wsl', 'wsl.exe']:
+                    if shutil.which(candidate):
+                        return candidate
+                raise FileNotFoundError(
+                    f"No bash interpreter found for {script_path}. "
+                    "Install Git for Windows, WSL2, or run Airflow inside Podman."
+                )
             return 'bash'
+        elif path_obj.suffix.lower() == '.ps1':
+            return 'powershell'
         else:
             return self.python
             
