@@ -221,14 +221,14 @@ _KHARON_CSS = """
     }
     [class*="st-key-exec_"] .stButton button:not(:disabled) {
         animation: kharon-play-green 0.01s forwards !important;
-        font-size: 2em !important;
-        min-height: 44px !important;
-        line-height: 1 !important;
+        min-height: 56px !important;
     }
     [class*="st-key-exec_"] .stButton button:disabled {
         animation: kharon-play-gray 0.01s forwards !important;
-        font-size: 2em !important;
-        min-height: 44px !important;
+        min-height: 56px !important;
+    }
+    [class*="st-key-exec_"] .stButton button p {
+        font-size: 1.8rem !important;
         line-height: 1 !important;
     }
     [data-testid="stExpander"] > div:first-child:hover {
