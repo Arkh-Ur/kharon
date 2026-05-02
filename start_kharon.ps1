@@ -1,14 +1,21 @@
 # ============================================================================
-# Kharōn — Inicio de la webapp en Windows
-# Solo inicia la webapp Streamlit. Airflow debe correr en Podman o WSL2.
+# Kharōn — One-click startup for Windows
+# Auto-detects Podman (recommended) or runs webapp natively.
 # ============================================================================
 
 param(
+    [switch]$Podman,
+    [switch]$AutoUpdate,
     [string]$AirflowHost = "localhost",
     [string]$AirflowPort = "8080",
     [string]$AirflowUser = "admin",
     [string]$AirflowPassword = "",
-    [string]$KharonPort = "8501"
+    [string]$KharonPort = "8501",
+    [string]$PostgresHost = "",
+    [string]$PostgresPort = "5432",
+    [string]$PostgresUser = "airflow",
+    [string]$PostgresPassword = "",
+    [string]$PostgresDb = "airflow"
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,46 +29,94 @@ Write-Host "  ║   Monitoreo de Scripts                  ║" -ForegroundColor 
 Write-Host "  ╚══════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 
-# ── Verificar Python ────────────────────────────────────────────────────────
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Error "Python no encontrado. Instalá Python 3.11+ desde python.org"
-    exit 1
+# ── Auto-detect Podman if not specified ─────────────────────────────────────
+$hasPodman = Get-Command podman -ErrorAction SilentlyContinue
+if (-not $Podman -and $hasPodman) {
+    Write-Host "[INFO] Podman detected — using all-in-one container mode" -ForegroundColor Green
+    $Podman = $true
 }
 
-$pythonVersion = python --version
-Write-Host "[INFO] $pythonVersion" -ForegroundColor Green
+# ── Podman all-in-one mode ──────────────────────────────────────────────────
+if ($Podman) {
+    if (-not $hasPodman) {
+        Write-Host "[ERROR] Podman no encontrado." -ForegroundColor Red
+        Write-Host "        Instalá Podman Desktop: https://podman-desktop.io/" -ForegroundColor Yellow
+        Write-Host "        O ejecá sin -Podman para modo webapp nativa." -ForegroundColor Yellow
+        exit 1
+    }
 
-# ── Verificar uv ────────────────────────────────────────────────────────────
+    $image = "kharon:latest"
+    if (-not (podman image exists $image 2>$null)) {
+        Write-Host "[INFO] Building $image (first run, ~3 min)..." -ForegroundColor Green
+        podman build -t $image $ScriptDir
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] Build failed. Check Containerfile." -ForegroundColor Red
+            exit 1
+        }
+    }
+
+    Write-Host "[INFO] Starting Kharōn container..." -ForegroundColor Green
+
+    $pgEnv = @()
+    if ($PostgresHost) {
+        $pgEnv += @(
+            "-e", "POSTGRES_HOST=${PostgresHost}",
+            "-e", "POSTGRES_PORT=${PostgresPort}",
+            "-e", "POSTGRES_USER=${PostgresUser}",
+            "-e", "POSTGRES_PASSWORD=${PostgresPassword}",
+            "-e", "POSTGRES_DB=${PostgresDb}"
+        )
+    }
+
+    podman run -it --rm `
+      --name kharon `
+      -p "${AirflowPort}:8080" `
+      -p "${KharonPort}:8501" `
+      -v "${ScriptDir}/airflow_home:/opt/airflow:Z" `
+      -e "AUTO_UPDATE=$(if ($AutoUpdate) {'true'} else {'false'})" `
+      -e "KHARON_AIRFLOW_PASSWORD=${AirflowPassword}" `
+      @pgEnv `
+      $image
+    return
+}
+
+# ── Native webapp mode (Airflow must be running separately) ─────────────────
+
+# Auto-install uv if missing
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Error "uv no encontrado. Instalá con: winget install astral-sh.uv"
+    Write-Host "[INFO] uv not found — installing..." -ForegroundColor Green
+    winget install astral-sh.uv --accept-source-agreements --accept-package-agreements 2>$null
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+        Write-Host "[ERROR] uv installation failed. Install manually: winget install astral-sh.uv" -ForegroundColor Red
+        exit 1
+    }
+}
+
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Host "[ERROR] Python no encontrado. Instalá Python 3.11+ desde python.org" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "[INFO] Sincronizando dependencias..." -ForegroundColor Green
+Write-Host "[INFO] $(python --version)" -ForegroundColor Green
+Write-Host "[INFO] Syncing dependencies..." -ForegroundColor Green
 uv sync --project $ScriptDir
 
-# ── Activar entorno virtual ──────────────────────────────────────────────────
 $VenvActivate = Join-Path $ScriptDir ".venv\Scripts\Activate.ps1"
 if (-not (Test-Path $VenvActivate)) {
-    Write-Error "Entorno virtual no encontrado en $ScriptDir\.venv"
+    Write-Host "[ERROR] Virtual environment not found. Run: uv sync" -ForegroundColor Red
     exit 1
 }
 & $VenvActivate
-Write-Host "[INFO] Entorno virtual activado" -ForegroundColor Green
 
-# ── Contraseña de Airflow ────────────────────────────────────────────────────
 if (-not $AirflowPassword) {
     $PwFile = Join-Path $ScriptDir "airflow_home\simple_auth_manager_passwords.json.generated"
     if (Test-Path $PwFile) {
         $AirflowPassword = (Get-Content $PwFile | ConvertFrom-Json).admin
-        Write-Host "[INFO] Contraseña de Airflow cargada desde archivo generado" -ForegroundColor Green
     } else {
         $AirflowPassword = "admin"
-        Write-Host "[WARN] No se encontró archivo de contraseña — usando 'admin'" -ForegroundColor Yellow
     }
 }
 
-# ── Variables de entorno ─────────────────────────────────────────────────────
 $env:KHARON_AIRFLOW_HOST     = $AirflowHost
 $env:KHARON_AIRFLOW_PORT     = $AirflowPort
 $env:KHARON_AIRFLOW_USER     = $AirflowUser
@@ -69,22 +124,23 @@ $env:KHARON_AIRFLOW_PASSWORD = $AirflowPassword
 $env:KHARON_PORT             = $KharonPort
 $env:AIRFLOW_HOME            = Join-Path $ScriptDir "airflow_home"
 
-# ── Verificar conexión a Airflow ─────────────────────────────────────────────
-Write-Host "[INFO] Verificando conexión a Airflow en ${AirflowHost}:${AirflowPort}..." -ForegroundColor Green
-try {
-    $response = Invoke-RestMethod -Uri "http://${AirflowHost}:${AirflowPort}/api/v2/monitor/health" -TimeoutSec 5
-    Write-Host "[INFO] Airflow disponible" -ForegroundColor Green
-} catch {
-    Write-Host "[WARN] Airflow no responde en http://${AirflowHost}:${AirflowPort}" -ForegroundColor Yellow
-    Write-Host "[WARN] Iniciá Airflow con Podman o WSL2 antes de continuar" -ForegroundColor Yellow
+if ($PostgresHost) {
+    $env:DATABASE_URL = "postgresql+psycopg2://${PostgresUser}:${PostgresPassword}@${PostgresHost}:${PostgresPort}/${PostgresDb}"
+    Write-Host "[INFO] Database: PostgreSQL ($PostgresHost)" -ForegroundColor Green
+} else {
+    Write-Host "[INFO] Database: SQLite" -ForegroundColor Green
 }
 
-# ── Iniciar webapp ───────────────────────────────────────────────────────────
-Write-Host "[INFO] Iniciando Kharōn webapp en el puerto $KharonPort..." -ForegroundColor Green
+Write-Host "[INFO] Checking Airflow at ${AirflowHost}:${AirflowPort}..." -ForegroundColor Green
+try {
+    Invoke-RestMethod -Uri "http://${AirflowHost}:${AirflowPort}/api/v2/monitor/health" -TimeoutSec 5 | Out-Null
+    Write-Host "[INFO] Airflow ready" -ForegroundColor Green
+} catch {
+    Write-Host "[WARN] Airflow not responding. Start with: .\start_kharon.ps1 -Podman" -ForegroundColor Yellow
+}
 
-$WebappDir = Join-Path $ScriptDir "webapp"
-Set-Location $WebappDir
-
+Write-Host "[INFO] Starting Kharōn webapp on port $KharonPort..." -ForegroundColor Green
+Set-Location (Join-Path $ScriptDir "webapp")
 streamlit run app.py `
     --server.port $KharonPort `
     --server.address "0.0.0.0" `

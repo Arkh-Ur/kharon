@@ -76,18 +76,24 @@ check_prerequisites() {
     log_info "Python: $(python3 --version)"
     
     if ! command -v uv &> /dev/null; then
-        log_error "uv not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh"
-        exit 1
+        log_info "uv not found — installing automatically..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh 2>&1 | tail -3
+        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+        if ! command -v uv &> /dev/null; then
+            log_error "uv installation failed. Install manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
+            exit 1
+        fi
     fi
     log_info "uv: $(uv --version)"
     
+    log_info "Syncing dependencies..."
     uv sync --extra dev --project "${KHARON_HOME}" 2>&1 | tail -1
     log_info "Dependencies synced"
     
     source "${VENV_DIR}/bin/activate"
     log_info "Virtual environment activated"
     
-    log_info "Airflow: $(airflow version 2>/dev/null || echo 'not installed')"
+    log_info "Airflow: $(airflow version 2>/dev/null || echo 'installing...')"
 }
 
 init_airflow() {
@@ -97,15 +103,30 @@ init_airflow() {
              "$AIRFLOW_HOME/logs/kharon_monitoring" \
              "$AIRFLOW_HOME/data" "$AIRFLOW_HOME/plugins"
 
-    # Override airflow.cfg paths via env vars — no hardcoded paths
     export AIRFLOW__CORE__DAGS_FOLDER="${AIRFLOW_HOME}/dags"
     export AIRFLOW__CORE__PLUGINS_FOLDER="${AIRFLOW_HOME}/plugins"
     export AIRFLOW__CORE__LOAD_EXAMPLES="false"
     export AIRFLOW__CORE__EXECUTOR="LocalExecutor"
-    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AIRFLOW_HOME}/airflow.db"
     export AIRFLOW__LOGGING__BASE_LOG_FOLDER="${AIRFLOW_HOME}/logs"
 
+    if [ -n "${DATABASE_URL:-}" ]; then
+        export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="$DATABASE_URL"
+        log_info "Database: PostgreSQL"
+    elif [ -n "${POSTGRES_HOST:-}" ]; then
+        export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-airflow}"
+        log_info "Database: PostgreSQL (${POSTGRES_HOST})"
+    else
+        export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AIRFLOW_HOME}/airflow.db"
+        log_info "Database: SQLite"
+    fi
+
     airflow db migrate 2>&1 | tail -1 || log_warn "Airflow DB migration issue"
+
+    airflow users create \
+        --username "${KHARON_AIRFLOW_USER}" \
+        --firstname Kharōn --lastname Admin --role Admin \
+        --email admin@arkh-ur.com \
+        --password "${KHARON_AIRFLOW_PASSWORD}" 2>/dev/null || true
 
     log_info "Airflow initialized"
 }

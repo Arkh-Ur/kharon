@@ -4,7 +4,7 @@
 
 **Arkh-Ur — Data Engineering Division**
 
-[![Version](https://img.shields.io/badge/version-0.5.1-blue)](https://github.com/Arkh-Ur/kharon/releases)
+[![Version](https://img.shields.io/badge/version-0.6.1-blue)](https://github.com/Arkh-Ur/kharon/releases)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
 [![Airflow](https://img.shields.io/badge/airflow-3.x-green)](https://airflow.apache.org/)
 [![License](https://img.shields.io/badge/license-Proprietary-red)]()
@@ -63,86 +63,70 @@ Airflow no tiene soporte oficial nativo en Windows. Hay dos métodos recomendado
 
 ---
 
-### Método 1: Podman (recomendado)
+### Método 1: Podman — All-in-One (recomendado)
 
-Airflow corre dentro de un contenedor Linux. La webapp Kharōn corre directamente en Windows.
+Airflow, PostgreSQL y la webapp Kharōn corren juntos en un único contenedor.
+La imagen se construye automáticamente en GitHub Actions y se publica en `ghcr.io`.
 
 #### Requisitos
 
-- [Podman Desktop](https://podman-desktop.io/) (instala Podman + podman-compose)
-- Python 3.11+ para Windows
-- [uv](https://docs.astral.sh/uv/): `winget install astral-sh.uv`
+- [Podman](https://podman.io/) o [Podman Desktop](https://podman-desktop.io/)
 
-#### 1. Clonar el repositorio
+#### Inicio rápido (imagen pre-construida)
 
-```powershell
+```bash
+# Descargar imagen publicada en GitHub Container Registry
+podman pull ghcr.io/arkh-ur/kharon:latest
+
+# Clonar solo para obtener airflow_home/ (datos persistentes)
 git clone https://github.com/Arkh-Ur/kharon.git
 cd kharon
+
+# Iniciar
+chmod +x podman-run.sh && ./podman-run.sh        # Linux/macOS
+.\start_kharon.ps1 -Podman                        # Windows
 ```
 
-#### 2. Construir la imagen de Airflow
+| Servicio | URL |
+|---|---|
+| Kharōn Webapp | http://localhost:8501 |
+| Airflow UI / API | http://localhost:8080 |
 
-```powershell
-podman build -t kharon-airflow -f Containerfile .
+#### Construir la imagen localmente (opcional)
+
+```bash
+podman build -t ghcr.io/arkh-ur/kharon:latest .
 ```
 
-#### 3. Iniciar el contenedor de Airflow
+#### Mantener actualizado
 
-```powershell
-podman run -d `
-  --name kharon-airflow `
-  -p 8080:8080 `
-  -v ${PWD}/airflow_home:/opt/airflow:Z `
-  -e AIRFLOW_HOME=/opt/airflow `
-  -e AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags `
-  -e AIRFLOW__CORE__LOAD_EXAMPLES=false `
-  -e AIRFLOW__CORE__EXECUTOR=LocalExecutor `
-  -e AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db `
-  kharon-airflow
+```bash
+# Reconstruir con el último código del repo:
+podman rmi kharon:latest && ./podman-run.sh
+
+# O actualizar automáticamente al iniciar (sin rebuild):
+AUTO_UPDATE=true ./podman-run.sh        # Linux/macOS
+.\start_kharon.ps1 -Podman -AutoUpdate  # Windows
 ```
 
-Verificar que Airflow esté listo:
+#### Build con tag específico
 
-```powershell
-# Esperar ~30s, luego:
-Invoke-RestMethod http://localhost:8080/api/v2/monitor/health
+```bash
+podman build --build-arg KHARON_BRANCH=v0.5.1 -t kharon:v0.5.1 .
 ```
 
-Obtener la contraseña generada:
+#### Datos persistentes
 
-```powershell
-Get-Content airflow_home\simple_auth_manager_passwords.json.generated | ConvertFrom-Json
-```
+Solo `airflow_home/` se monta como volumen — DAGs generados, registros de clientes y scripts externos persisten entre reinicios.
 
-#### 4. Iniciar la webapp Kharōn
+#### Verificación
 
-```powershell
-# Instalar dependencias
-uv sync
+```bash
+curl http://localhost:8080/api/v2/monitor/health
+curl http://localhost:8501/_stcore/health
 
-# Activar entorno virtual
-.venv\Scripts\Activate.ps1
-
-# Configurar conexión a Airflow
-$env:KHARON_AIRFLOW_HOST = "localhost"
-$env:KHARON_AIRFLOW_PORT = "8080"
-$env:KHARON_AIRFLOW_USER = "admin"
-$env:KHARON_AIRFLOW_PASSWORD = "<contraseña del paso anterior>"
-
-# Iniciar webapp
-cd webapp
-streamlit run app.py --server.port 8501 --server.address 0.0.0.0
-```
-
-#### Scripts externos en contenedor
-
-Los scripts en `airflow_home/scripts_externos/` son accesibles por el contenedor gracias al montaje de volumen. Los scripts `.sh` y `.py` corren dentro del contenedor Linux sin ninguna configuración adicional.
-
-#### Detener
-
-```powershell
-podman stop kharon-airflow
-podman rm kharon-airflow
+# Ver versión corriendo
+podman exec kharon git -C /opt/kharon describe --tags --always
 ```
 
 ---
@@ -200,6 +184,8 @@ Acceder desde Windows:
 
 Todas las variables tienen valores por defecto funcionales. Solo configurar si se necesita cambiar algo.
 
+### General
+
 | Variable | Default | Descripción |
 |---|---|---|
 | `KHARON_HOME` | directorio del script | Raíz del proyecto |
@@ -209,6 +195,41 @@ Todas las variables tienen valores por defecto funcionales. Solo configurar si s
 | `KHARON_AIRFLOW_USER` | `admin` | Usuario de Airflow |
 | `KHARON_AIRFLOW_PASSWORD` | auto (del archivo .generated) | Contraseña de Airflow |
 | `KHARON_PORT` | `8501` | Puerto de la webapp |
+| `AUTO_UPDATE` | `false` | `git pull` al iniciar (Podman) |
+
+### PostgreSQL (opcional — por defecto usa SQLite)
+
+Kharōn soporta dos modos de base de datos para Airflow:
+
+| Modo | Cuándo | Persistencia |
+|------|--------|-------------|
+| **SQLite** | Default (nativo Linux/macOS) | `airflow_home/airflow.db` |
+| **PostgreSQL embedded** | Podman (automático) | `airflow_home/postgres/` volumen |
+
+#### Podman — PostgreSQL incluido
+
+El contenedor incluye PostgreSQL. Se inicializa automáticamente en el primer run y los datos persisten en el volumen `airflow_home/postgres/`. No hay que configurar nada.
+
+#### Nativo (Linux/macOS) — PostgreSQL externo
+
+```bash
+# Exportar variables antes de ejecutar start_kharon.sh:
+export POSTGRES_HOST=localhost
+export POSTGRES_USER=airflow
+export POSTGRES_PASSWORD=secret
+export POSTGRES_DB=kharon
+./start_kharon.sh
+
+# O con connection string completo:
+export DATABASE_URL="postgresql+psycopg2://airflow:secret@localhost:5432/kharon"
+./start_kharon.sh
+```
+
+#### Nativo (Windows) — PostgreSQL externo
+
+```powershell
+.\start_kharon.ps1 -PostgresHost localhost -PostgresPassword secret
+```
 
 ---
 
@@ -264,9 +285,11 @@ kharon/
 │   ├── components/           # Componentes UI
 │   └── static/               # Logos SVG
 ├── tests/e2e/                # Tests Playwright
-├── Containerfile             # Imagen para Podman/Docker
-├── start_kharon.sh           # Inicio Linux/macOS
-└── start_kharon.ps1          # Inicio Windows (webapp únicamente)
+├── Containerfile             # All-in-one image (Airflow + Streamlit)
+├── docker-entrypoint.sh      # Container entrypoint
+├── podman-run.sh             # Podman launcher (Linux/macOS)
+├── start_kharon.sh           # Inicio Linux/macOS (nativo)
+└── start_kharon.ps1          # Inicio Windows (nativo + Podman)
 ```
 
 ---

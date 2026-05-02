@@ -589,8 +589,8 @@ def _get_client_manager() -> ClientManager:
 
 
 @st.cache_resource
-def _get_dag_generator() -> DAGGenerator:
-    return DAGGenerator()
+def _get_dag_generator(_dags_dir: str = "") -> DAGGenerator:
+    return DAGGenerator(dags_dir=Path(_dags_dir) if _dags_dir else None)
 
 
 @st.cache_data(ttl=5)
@@ -1283,7 +1283,7 @@ def _pending_deployments_fragment(pending: list) -> None:
         )
         # Stop button inside the banner area (same column, below the div)
         if st.button(f"🗑 Cancelar despliegue", key=f"del_pending_{_sid}", use_container_width=True):
-            generator = _get_dag_generator()
+            generator = _get_dag_generator(str(config.get_dags_dir()))
             generator.delete_dag(_sid)
             _get_kharon_dags.clear()
             _get_kharon_dag_list.clear()
@@ -1339,7 +1339,7 @@ def _page_processes() -> None:
         kharon_dags = filtered_dags
 
     # Load registry once for search + pending deployments
-    _registry_all = _get_dag_generator().get_all_scripts()
+    _registry_all = _get_dag_generator(str(config.get_dags_dir())).get_all_scripts()
 
     if search_term:
         search_lower = search_term.lower()
@@ -1622,7 +1622,7 @@ def _page_processes() -> None:
                     if _mode_changed or _sched_changed:
                         if st.button("✓ Aplicar", key=f"apply_mode_{dag_id}", use_container_width=True):
                             try:
-                                generator = _get_dag_generator()
+                                generator = _get_dag_generator(str(config.get_dags_dir()))
                                 gen_result = generator.update_execution_mode(
                                     script_id=dag_id,
                                     execution_mode=_new_mode,
@@ -1699,7 +1699,7 @@ def _page_processes() -> None:
                         )
                         if st.button("📎 Asignar config", key=f"cfg_assign_btn_{dag_id}"):
                             if _new_cfg and _new_cfg.strip():
-                                generator = _get_dag_generator()
+                                generator = _get_dag_generator(str(config.get_dags_dir()))
                                 registry = generator.get_all_scripts()
                                 if dag_id in registry:
                                     registry[dag_id]["config_file"] = _new_cfg.strip()
@@ -1752,7 +1752,7 @@ def _page_processes() -> None:
                         if st.button("✅ Confirmar eliminación", key=f"del_yes_{dag_id}", type="primary"):
                             _errors = []
                             try:
-                                generator = _get_dag_generator()
+                                generator = _get_dag_generator(str(config.get_dags_dir()))
                                 generator.delete_dag(dag_id)
                             except Exception as exc:
                                 _errors.append(f"Archivo/registro: {exc}")
@@ -2250,7 +2250,7 @@ def _page_new_script() -> None:
         kharon_dags = []
 
     existing_scripts = []
-    _gen_registry = _get_dag_generator().get_all_scripts()
+    _gen_registry = _get_dag_generator(str(config.get_dags_dir())).get_all_scripts()
     _existing_ids = set(_gen_registry.keys())
     for d in kharon_dags:
         _tags = [t.get("name", "") if isinstance(t, dict) else t for t in d.get("tags", [])]
@@ -2264,7 +2264,7 @@ def _page_new_script() -> None:
     if result:
         with st.spinner("Generando DAG..."):
             try:
-                generator = _get_dag_generator()
+                generator = _get_dag_generator(str(config.get_dags_dir()))
                 script_id = generator._build_dag_id(
                     client_id=result.get("client_id", result.get("client", "")),
                     script_name=result.get("name", "")
