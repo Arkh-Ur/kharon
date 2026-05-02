@@ -7,6 +7,10 @@ KHARON_PORT="${KHARON_PORT:-8501}"
 KHARON_AIRFLOW_PORT="${KHARON_AIRFLOW_PORT:-8080}"
 AUTO_UPDATE="${AUTO_UPDATE:-false}"
 
+PGDATA="${AIRFLOW_HOME}/postgres"
+PGUSER="airflow"
+PGDB="kharon"
+
 echo "⚓ Kharōn — Starting up..."
 
 if [ "$AUTO_UPDATE" = "true" ]; then
@@ -21,26 +25,37 @@ fi
 
 echo "📌 Version: $(cd $KHARON_HOME && git describe --tags --always 2>/dev/null || echo 'unknown')"
 
+mkdir -p "${AIRFLOW_HOME}/dags" "${AIRFLOW_HOME}/logs" \
+         "${AIRFLOW_HOME}/logs/kharon_monitoring" \
+         "${AIRFLOW_HOME}/data" "${AIRFLOW_HOME}/plugins"
+
+# ── Start PostgreSQL ────────────────────────────────────────────────────────
+if [ ! -d "$PGDATA" ] || [ -z "$(ls -A $PGDATA 2>/dev/null)" ]; then
+    echo "📦 Initializing PostgreSQL..."
+    mkdir -p "$PGDATA"
+    chown postgres:postgres "$PGDATA"
+    su postgres -c "initdb -D $PGDATA" > /dev/null 2>&1
+
+    su postgres -c "pg_ctl -D $PGDATA -o \"-k /tmp\" -l ${AIRFLOW_HOME}/logs/postgres.log start" > /dev/null 2>&1
+    sleep 2
+
+    su postgres -c "psql -h /tmp -c \"CREATE USER $PGUSER WITH PASSWORD 'kharon' SUPERUSER;\"" 2>/dev/null || true
+    su postgres -c "psql -h /tmp -c \"CREATE DATABASE $PGDB OWNER $PGUSER;\"" 2>/dev/null || true
+    echo "✅ PostgreSQL initialized (user: $PGUSER, db: $PGDB)"
+else
+    echo "📦 Starting PostgreSQL..."
+    su postgres -c "pg_ctl -D $PGDATA -o \"-k /tmp\" -l ${AIRFLOW_HOME}/logs/postgres.log start" > /dev/null 2>&1
+    sleep 2
+    echo "✅ PostgreSQL ready"
+fi
+
+# ── Configure Airflow ───────────────────────────────────────────────────────
 export AIRFLOW__CORE__DAGS_FOLDER="${AIRFLOW_HOME}/dags"
 export AIRFLOW__CORE__PLUGINS_FOLDER="${AIRFLOW_HOME}/plugins"
 export AIRFLOW__CORE__LOAD_EXAMPLES="false"
 export AIRFLOW__CORE__EXECUTOR="LocalExecutor"
 export AIRFLOW__LOGGING__BASE_LOG_FOLDER="${AIRFLOW_HOME}/logs"
-
-if [ -n "$DATABASE_URL" ]; then
-    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="$DATABASE_URL"
-    echo "📦 Database: PostgreSQL ($DATABASE_URL)"
-elif [ -n "$POSTGRES_HOST" ]; then
-    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-airflow}"
-    echo "📦 Database: PostgreSQL (${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-airflow})"
-else
-    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AIRFLOW_HOME}/airflow.db"
-    echo "📦 Database: SQLite (${AIRFLOW_HOME}/airflow.db)"
-fi
-
-mkdir -p "${AIRFLOW_HOME}/dags" "${AIRFLOW_HOME}/logs" \
-         "${AIRFLOW_HOME}/logs/kharon_monitoring" \
-         "${AIRFLOW_HOME}/data" "${AIRFLOW_HOME}/plugins"
+export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="postgresql+psycopg2://${PGUSER}:kharon@/tmp/${PGDB}?host=/tmp"
 
 echo "🗄️  Initializing Airflow DB..."
 airflow db migrate 2>&1 | tail -2
@@ -61,6 +76,7 @@ fi
 cleanup() {
     echo "🛑 Shutting down Kharōn..."
     kill $(jobs -p) 2>/dev/null || true
+    su postgres -c "pg_ctl -D $PGDATA stop" > /dev/null 2>&1 || true
     wait
 }
 trap cleanup SIGINT SIGTERM
@@ -96,6 +112,7 @@ echo "║     ⚓ Kharōn is running!               ║"
 echo "║                                          ║"
 echo "║  Kharōn App:  http://localhost:${KHARON_PORT}   ║"
 echo "║  Airflow UI:  http://localhost:${KHARON_AIRFLOW_PORT}   ║"
+echo "║  Database:    PostgreSQL (embedded)      ║"
 echo "║                                          ║"
 echo "║  Ctrl+C to stop                         ║"
 echo "╚══════════════════════════════════════════╝"

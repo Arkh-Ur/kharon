@@ -5,7 +5,8 @@ ARG KHARON_BRANCH=main
 
 USER root
 
-RUN apt-get update && apt-get install -y --no-install-recommends git curl && \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl postgresql postgresql-contrib && \
     rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 --branch "${KHARON_BRANCH}" "${KHARON_REPO}" /opt/kharon && \

@@ -191,34 +191,36 @@ Todas las variables tienen valores por defecto funcionales. Solo configurar si s
 
 ### PostgreSQL (opcional — por defecto usa SQLite)
 
-| Variable | Default | Descripción |
-|---|---|---|
-| `DATABASE_URL` | — | Connection string completo: `postgresql+psycopg2://user:pass@host:5432/db` |
-| `POSTGRES_HOST` | — | Host de PostgreSQL (si se setea, usa PostgreSQL en vez de SQLite) |
-| `POSTGRES_PORT` | `5432` | Puerto de PostgreSQL |
-| `POSTGRES_USER` | `airflow` | Usuario de PostgreSQL |
-| `POSTGRES_PASSWORD` | — | Contraseña de PostgreSQL |
-| `POSTGRES_DB` | `airflow` | Base de datos de PostgreSQL |
+Kharōn soporta dos modos de base de datos para Airflow:
 
-#### Ejemplo con PostgreSQL
+| Modo | Cuándo | Persistencia |
+|------|--------|-------------|
+| **SQLite** | Default (nativo Linux/macOS) | `airflow_home/airflow.db` |
+| **PostgreSQL embedded** | Podman (automático) | `airflow_home/postgres/` volumen |
+
+#### Podman — PostgreSQL incluido
+
+El contenedor incluye PostgreSQL. Se inicializa automáticamente en el primer run y los datos persisten en el volumen `airflow_home/postgres/`. No hay que configurar nada.
+
+#### Nativo (Linux/macOS) — PostgreSQL externo
 
 ```bash
-# Linux/macOS (nativo):
-export POSTGRES_HOST=db.example.com
+# Exportar variables antes de ejecutar start_kharon.sh:
+export POSTGRES_HOST=localhost
 export POSTGRES_USER=airflow
 export POSTGRES_PASSWORD=secret
 export POSTGRES_DB=kharon
 ./start_kharon.sh
 
-# Podman:
-POSTGRES_HOST=db.example.com POSTGRES_PASSWORD=secret ./podman-run.sh
-
-# Windows (Podman):
-.\start_kharon.ps1 -PostgresHost db.example.com -PostgresPassword secret
-
-# O con DATABASE_URL completo:
-export DATABASE_URL="postgresql+psycopg2://airflow:secret@db.example.com:5432/kharon"
+# O con connection string completo:
+export DATABASE_URL="postgresql+psycopg2://airflow:secret@localhost:5432/kharon"
 ./start_kharon.sh
+```
+
+#### Nativo (Windows) — PostgreSQL externo
+
+```powershell
+.\start_kharon.ps1 -PostgresHost localhost -PostgresPassword secret
 ```
 
 ---
