@@ -3,6 +3,7 @@ from datetime import datetime
 import streamlit as st
 
 from .status_badge import render_status_badge, render_client_badge
+from utils import safe_html
 
 
 _STATUS_BORDER_COLORS = {
@@ -54,13 +55,13 @@ def render_dag_card(dag_info: dict, client_badge: str = None) -> None:
         box-shadow: 0 1px 4px rgba(0,0,0,0.3);
     ">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <span style="font-size:1.05em; font-weight:700; color:#e5e7eb;">{dag_id}</span>
+            <span style="font-size:1.05em; font-weight:700; color:#e5e7eb;">{safe_html(dag_id)}</span>
         </div>
-        <div style="font-size:0.85em; color:#9ca3af; margin-bottom:10px;">{description}</div>
+        <div style="font-size:0.85em; color:#9ca3af; margin-bottom:10px;">{safe_html(description)}</div>
         <div style="display:flex; gap:16px; font-size:0.78em; color:#6b7280;">
-            <span>📅 {last_run_display}</span>
-            <span>🕐 {schedule}</span>
-            {f'<span>👤 {", ".join(owners)}</span>' if owners else ''}
+            <span>📅 {safe_html(last_run_display)}</span>
+            <span>🕐 {safe_html(schedule)}</span>
+            {f'<span>👤 {safe_html(", ".join(owners))}</span>' if owners else ''}
         </div>
     </div>
     """

@@ -1,7 +1,10 @@
 """Shared utilities for Kharōn webapp."""
 
+import html
 import io
+import os
 import re
+import tempfile
 from typing import Any, List, Optional
 
 _WEEKDAYS = {
@@ -10,9 +13,28 @@ _WEEKDAYS = {
 }
 
 
+def safe_html(text: str) -> str:
+    return html.escape(str(text))
+
+
+_AIRFLOW_ALIASES = {
+    "@hourly": "Cada hora",
+    "@daily": "Todos los días a las 00:00",
+    "@weekly": "Cada domingo a las 00:00",
+    "@monthly": "El día 1 de cada mes a las 00:00",
+    "@yearly": "El 1 de enero a las 00:00",
+    "@annually": "El 1 de enero a las 00:00",
+    "@continuous": "Continuo — se re-ejecuta al terminar",
+    "@once": "Una sola vez",
+}
+
+
 def describe_cron(expr: str) -> str:
     """Human-readable Spanish description of a cron expression."""
-    parts = expr.strip().split()
+    stripped = expr.strip()
+    if stripped in _AIRFLOW_ALIASES:
+        return _AIRFLOW_ALIASES[stripped]
+    parts = stripped.split()
     if len(parts) != 5:
         return expr
     minute, hour, dom, month, dow = parts
@@ -178,3 +200,35 @@ def format_airflow_log(content: Any) -> str:
                         )
 
     return "\n".join(lines)
+
+
+def atomic_write(path: str, content: str) -> None:
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)), suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_bytes(path: str, content: bytes) -> None:
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)), suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise

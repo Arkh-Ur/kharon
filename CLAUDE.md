@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Kharōn
 
-Script orchestration platform for Arkh-Ur. It wraps existing external scripts (never modified) in Airflow DAGs and exposes a Streamlit web UI for monitoring, on-demand execution, and client management.
+Script orchestration platform for Arkh-Ur. Wraps existing external scripts (never modified) in Airflow DAGs and exposes a Streamlit web UI for monitoring, on-demand execution, and client management.
 
 ## Stack
 
@@ -19,7 +19,7 @@ Script orchestration platform for Arkh-Ur. It wraps existing external scripts (n
 ## Commands
 
 ```bash
-# Start everything (recommended)
+# Start everything
 ./start_kharon.sh
 
 # Webapp only (Airflow must already be running)
@@ -34,59 +34,124 @@ airflow api-server --port 8080
 # E2E tests (requires running services on ports 8501 and 8080)
 source airflow_venv/bin/activate
 pytest tests/e2e/ -v
-pytest tests/e2e/test_webapp.py::test_name -v   # single test
+pytest tests/e2e/test_webapp.py::test_name -v
 ```
 
 Config via env vars (all have defaults):
-- `KHARON_AIRFLOW_HOST` / `KHARON_AIRFLOW_PORT` / `KHARON_AIRFLOW_USER` / `KHARON_AIRFLOW_PASSWORD`
-- `KHARON_PORT` (Streamlit port, default 8501)
-- `AIRFLOW_HOME` (default `./airflow_home`)
+- `KHARON_AIRFLOW_HOST/PORT/USER/PASSWORD`, `KHARON_PORT` (8501), `AIRFLOW_HOME`
 
 ## Architecture
 
 ### Webapp (`webapp/`)
 
-Entry point is `webapp/app.py`. Navigation is a dict `_PAGE_HANDLERS` mapping page names to handler functions. Pages: Tablero (dashboard), Procesos (processes), Nuevo Script, Configuración.
+Entry point `webapp/app.py`. Navigation via `_PAGE_HANDLERS` dict. 7 pages: Tablero, Procesos, Logs, Monitoreo, Salud, Nuevo Script, Configuración.
 
-- `airflow_client.py` — REST client for Airflow 3.x API (`/api/v2`). Auth is JWT cookie-based: a GET to `/api/v2/auth/login` with BasicAuth sets the `_token` cookie; all subsequent requests use that session. Re-authenticates automatically on 401.
-- `client_manager.py` — CRUD for `clients_registry.yaml`. Supports both list format (`clients: [...]`) and dict format for backward compatibility.
-- `dag_generator.py` — generates `.py` DAG files into `airflow_home/dags/` from web form input and appends the entry to `scripts_registry.yaml`.
-- `config.py` — all paths and settings; runs `ensure_directories()` at import time.
+**Core modules:**
+- `airflow_client.py` — REST client for Airflow 3.x (`/api/v2`). Auth: JWT cookie via `GET /api/v2/auth/login` with BasicAuth (⚠️ known issue: should be `POST` with JSON body per Airflow 3.x spec). Auto-reauthenticates on 401. `get_task_log` routes through `_request()` and parses Airflow 3.x JSON log format `{"content": [...]}` via `utils.format_airflow_log`. All requests use `timeout=30`.
+- `client_manager.py` — CRUD for `clients_registry.yaml`. `Client` dataclass: required fields are `id`, `name`, `color` only. `load_clients()` handles both list and flat-dict YAML formats — auto-migrates legacy `clients: [...]` format to flat dict on first load. All CRUD writes use flat dict format.
+- `dag_generator.py` — Generates `.py` DAG files into `airflow_home/dags/` and writes to `generated_scripts.yaml`. Default uses `GENERATED_SCRIPTS_PATH` (not `SCRIPTS_REGISTRY_PATH`). Has `update_execution_mode()` to regenerate a DAG in place. String values embedded in generated Python code are sanitized via `_safe_script_name`/`_safe_client_id` helpers.
+- `config.py` — All paths and theme colors. Runs `ensure_directories()` at import time.
+- `utils.py` — Shared: `describe_cron()` (Spanish), `extract_primary_color()` (raster + SVG), `format_airflow_log()` (Airflow 3.x event-dict lists → readable text), `safe_html()` (HTML escaping), `atomic_write()` (write-then-rename for safe file writes).
+
+**Data fetching pattern:**
+`_get_kharon_dags()` — central helper that fetches all Kharōn DAGs + their last 15 runs per DAG in one function. Used by most pages to avoid redundant `AirflowClient` instantiations.
+
+**DAG filtering — central system (all pages go through this):**
+```
+_filter_kharon_dags(all_dags) → filtered list
+  ├── _is_kharon_dag(dag)           # prefix "kharon_" OR tag "kharon-auto"
+  ├── _load_generated_dag_clients() # reads generated_scripts.yaml (priority 1 — bypasses Airflow stale DB)
+  ├── _resolve_dag_client(dag, clients, gen_map)  # resolves client in 4 formats:
+  │     1. generated_scripts.yaml (webapp DAGs — bypasses stale Airflow DB)
+  │     2. tag "client_{id}" → exact match or "client_" prefix match
+  │     3. tag is a registered client NAME (legacy/stale Airflow cache)
+  │     4. tag is a registered client ID
+  ├── show_unregistered_dags       # session_state toggle (Configuración page)
+  └── client_filter                # session_state from sidebar selectbox (display name)
+```
+
+**Airflow date compatibility:** `_dag_run_date(run)` → `logical_date` → `execution_date` → `start_date` (Airflow 3.x renamed `execution_date` to `logical_date`).
 
 ### Airflow DAGs (`airflow_home/dags/`)
 
-- `operators/kharon_operator.py` — `KharonOperator(BaseOperator)` orchestrates `ScriptRunner` + `ScriptMonitor`. Import from `airflow.sdk.bases.operator` (Airflow 3.x), NOT `airflow.models`.
-- `utils/script_runner.py` — runs `.py`/`.sh` scripts via `subprocess.Popen`. Detects interpreter from extension. Parses `RESULT:{json}` lines from stdout into structured output.
-- `utils/script_monitor.py` — tracks per-script health (consecutive failures, success rate). Results written to `airflow_home/logs/kharon_monitoring/`.
-- `config/scripts_registry.yaml` — config manual de scripts Airflow (formato `scripts: [...]`). **No modificar desde el webapp.**
-- `config/generated_scripts.yaml` — registry de scripts creados desde la webapp (formato dict `{script_id: {metadata}}`). Manejado exclusivamente por `DAGGenerator`.
-- `config/clients_registry.yaml` — client definitions.
+- `operators/kharon_operator.py` — `KharonOperator(BaseOperator)`. Import from `airflow.sdk.bases.operator` (Airflow 3.x), NOT `airflow.models`.
+- `utils/script_runner.py` — Runs `.py`/`.sh` via `subprocess.Popen`. Detects interpreter by extension. Parses `RESULT:{json}` from stdout.
+- `utils/script_monitor.py` — Per-script health tracking. Writes to `airflow_home/logs/kharon_monitoring/{script_id}_history.json` (NOT a single report file — one file per script).
+- `config/scripts_registry.yaml` — Manual Airflow config (`scripts: [...]` list format). **Never write from webapp.**
+- `config/generated_scripts.yaml` — Webapp-generated DAG registry (flat dict `{script_id: {metadata}}`). Managed exclusively by `DAGGenerator`.
+- `config/clients_registry.yaml` — Client definitions (flat dict format after migration).
 
 ### External scripts (`airflow_home/scripts_externos/`)
 
-Scripts placed here are NEVER modified by Kharōn. They are executed as-is by `ScriptRunner`. Scripts can optionally write `RESULT:{json}` to stdout for structured output.
+Never modified by Kharōn. Optional: output `RESULT:{json}` to stdout for structured results.
 
 ## DAG conventions
 
-Generated DAGs:
-- DAG ID: `{script_id}` (sanitized: lowercase, only `[a-z0-9_]`)
+- DAG ID: `{sanitized_script_id}` (lowercase, `[a-z0-9_]` only). No `kharon_` prefix for webapp-generated DAGs.
 - Tags always include `kharon-auto` and `client_{client_id}`
-- Identified as Kharōn DAGs by: tag `kharon-auto` OR `dag_id.startswith("kharon_")`
-
-Execution modes:
-- `on_demand` → `schedule=None`
-- `continuous` → `schedule="@continuous"` + `max_active_runs=1`
-- `scheduled` → cron string passed directly
+- Identified as Kharōn DAGs: tag `kharon-auto` OR `dag_id.startswith("kharon_")`
+- Execution modes: `on_demand` (schedule=None) · `continuous` (@continuous + max_active_runs=1) · `scheduled` (cron string)
+- `get_registry_status()` globs `kharon_*.py` — always returns 0 for webapp-generated DAGs (known bug: generated DAGs don't have this prefix)
 
 ## Airflow 3.x gotchas
 
-- Requires a separate `dag-processor` daemon (not included in `standalone`).
-- API prefix is `/api/v2` (not `/api/v1`).
-- Health check endpoint: `GET /api/v2/monitor/health`.
-- `BaseOperator` lives in `airflow.sdk.bases.operator`, not `airflow.models`.
-- DAG `schedule_interval` is now `schedule`; the API returns it as `{"value": "..."}` dict.
-- Airflow auto-generates an admin password on first run, stored in `airflow_home/simple_auth_manager_passwords.json.generated`.
+- Separate `dag-processor` daemon required (`airflow dag-processor`).
+- API prefix: `/api/v2`. Health: `GET /api/v2/monitor/health`.
+- `BaseOperator` is in `airflow.sdk.bases.operator`, NOT `airflow.models`.
+- `schedule_interval` → `schedule`. API returns it as `{"value": "..."}` dict.
+- Log endpoint returns `{"content": [event_dict, ...], "continuation_token": ...}` — NOT plain text. `format_airflow_log()` converts event-dicts to readable lines.
+- `execution_date` renamed to `logical_date`. Use `_dag_run_date(run)` helper.
+- Task `state` can be `null` (Python `None`) for unstarted tasks. `try_number=0` means never executed — no log available.
+- Admin password auto-generated to `airflow_home/simple_auth_manager_passwords.json.generated`.
+- Airflow's DB can cache stale DAG tags — `_load_generated_dag_clients()` reads `generated_scripts.yaml` as priority 1 to bypass this.
+- `@continuous` schedule: verify availability in target Airflow 3.x installation before using.
+
+## Client ID resolution
+
+Two historical conventions co-exist:
+- Webapp-generated DAGs: tag `client_santa_elena` → id `santa_elena` → registry has `santa_elena` ✓
+- Hand-crafted DAGs: tag `client_alpha` → id `alpha` → registry has `client_alpha` (needs prefix resolution)
+
+`_resolve_dag_client` handles both. Never assume a raw tag value equals a registered client ID.
+
+## Known pending issues (from adversarial review)
+
+| Severity | File | Issue |
+|----------|------|-------|
+| CRITICAL | `airflow_client.py:51` | `_authenticate` uses GET — should be `POST` with `json={"username":..., "password":...}` |
+| CRITICAL | `dag_generator.py` | `_safe_client_id` needs `repr()` wrapping for single-quote injection in generated code |
+| WARNING | `app.py:864` | `datetime.now()` naive mixed with tz-aware datetimes in Gantt chart |
+| WARNING | `app.py:~2183` | Client ID derivation doesn't sanitize all special chars (`/`, `'`, `&`, etc.) |
+| WARNING | `client_manager.py:263` | `Client(**client_data)` can raise `TypeError` on unexpected keys |
+| WARNING | `app.py:~1065` | N+1 `_load_registry()` in search loop (partial fix — expander loop fixed, search loop not) |
+| WARNING | `script_form.py` + `app.py` | `startswith()` path traversal check bypassable — use `Path.is_relative_to()` |
+| WARNING | `airflow_client.py:93` | Dead `isinstance(e, AirflowClientError)` guard in `except RequestException` |
+
+## Components
+
+`webapp/components/status_badge.py`:
+- `render_status_badge(status)` — Airflow states: success/failed/running/queued/paused/up_for_retry/upstream_failed/skipped/unknown
+- `render_client_badge(client_dict)` — Shows logo if `logo_path` exists, else colored initial square. No emoji.
+- `_client_icon_html(client_dict)` — Returns raw HTML for logo/initial (importable by `app.py`)
+- `render_health_indicator(health_dict)` — healthy/unhealthy/unknown/pending
+- `render_criticality_badge(criticality)` — alta/media/baja
+
+`webapp/components/log_viewer.py`:
+- `render_log_viewer(log_content, auto_refresh, key_prefix)` — accepts `key_prefix` to avoid duplicate Streamlit widget IDs when rendered multiple times.
 
 ## E2E tests
 
-Playwright-based (`tests/e2e/`). Require both services running. Screenshots on failure saved to `tests/e2e/screenshots/`. The `conftest.py` fixture reads the Airflow password from `KHARON_AIRFLOW_PASSWORD` env var or the generated passwords file.
+Playwright-based (`tests/e2e/`). Require both services running. Screenshots on failure → `tests/e2e/screenshots/`. Password from `KHARON_AIRFLOW_PASSWORD` env var or `airflow_home/simple_auth_manager_passwords.json.generated`.
+
+## Skills (Auto-load based on context)
+
+When you detect any of these contexts, IMMEDIATELY load the corresponding skill BEFORE writing any code.
+
+| Context | Skill to load |
+| ------- | ------------- |
+| Streamlit apps, st.cache_*, st.session_state, st.fragment, st.form | streamlit |
+| Building UI components, pages, dashboards, HTML/CSS layouts | frontend-design |
+| shadcn/ui components, components.json, component registries | shadcn |
+| Complex multi-component HTML artifacts (React, Tailwind, shadcn) | web-artifacts-builder |
+
+Load skills BEFORE writing code. Apply ALL patterns. Multiple skills can apply simultaneously.

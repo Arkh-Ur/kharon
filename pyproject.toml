@@ -1,0 +1,43 @@
+[project]
+name = "kharon"
+version = "0.4.0-pre"
+description = "Plataforma de Orquestación y Monitoreo de Scripts — Arkh-Ur"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Arkh-Ur", email = "dev@arkh-ur.com" }]
+
+dependencies = [
+    "apache-airflow>=3.0.0",
+    "streamlit>=1.37.0",
+    "streamlit-autorefresh>=1.0.1",
+    "requests>=2.31.0",
+    "pyyaml>=6.0",
+    "plotly>=6.0.0",
+    "pandas>=3.0.0",
+    "Pillow>=10.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-playwright>=0.7.0",
+    "playwright>=1.58.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "e2e: end-to-end tests requiring running services",
+]

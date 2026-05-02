@@ -4,9 +4,9 @@ Uses JWT cookie-based auth via /api/v2/auth/login flow.
 """
 
 import json
+import threading
 from typing import Dict, List, Optional, Any
 import requests
-from requests.auth import HTTPBasicAuth
 from requests.exceptions import RequestException
 
 import config
@@ -38,24 +38,28 @@ class AirflowClient:
         self.password = password or config.AIRFLOW_PASSWORD
 
         self.session = requests.Session()
-        self.session.timeout = 30
         self.session.headers.update({
             'Content-Type': 'application/json',
             'Accept': 'application/json',
         })
+        self._session_lock = threading.RLock()
         self._authenticate()
 
     def _authenticate(self) -> None:
+        # This Airflow installation uses GET + BasicAuth for the login endpoint.
+        # POST with JSON body returns 405 on this deployment (non-standard but functional).
+        from requests.auth import HTTPBasicAuth
         login_url = f"{self.base_url}/api/v2/auth/login"
         try:
             response = self.session.get(
                 login_url,
                 auth=HTTPBasicAuth(self.username, self.password),
                 allow_redirects=True,
+                timeout=30,
             )
-            if '_token' not in self.session.cookies.get_dict():
+            if not response.ok or not self.session.cookies:
                 raise AirflowClientError(
-                    "Authentication failed: no JWT token received from Airflow",
+                    "Authentication failed: no session cookie received",
                     status_code=response.status_code,
                 )
         except RequestException as e:
@@ -63,50 +67,53 @@ class AirflowClient:
 
     def _request(self, method: str, endpoint: str, **kwargs) -> Dict:
         url = f"{self.base_url}{endpoint}"
-
-        if '_token' not in self.session.cookies.get_dict():
-            self._authenticate()
-
-        try:
-            response = self.session.request(method, url, **kwargs)
-
-            if response.status_code == 401:
+        with self._session_lock:
+            if not self.session.cookies:
                 self._authenticate()
-                response = self.session.request(method, url, **kwargs)
-
-            if not response.ok:
-                try:
-                    error_data = response.json()
-                except (ValueError, json.JSONDecodeError):
-                    error_data = {"error": response.text}
-
-                raise AirflowClientError(
-                    f"Request failed: {response.status_code} {response.reason}",
-                    status_code=response.status_code,
-                    response=error_data,
-                )
-
-            if response.text.strip():
-                return response.json()
-            return {}
-
-        except RequestException as e:
-            if isinstance(e, AirflowClientError):
-                raise
-            raise AirflowClientError(f"Request failed: {str(e)}") from e
+            try:
+                response = self.session.request(method, url, timeout=30, **kwargs)
+                if response.status_code == 401:
+                    self._authenticate()
+                    response = self.session.request(method, url, timeout=30, **kwargs)
+            except RequestException as e:
+                raise AirflowClientError(f"Request failed: {str(e)}") from e
+        # Error handling for non-ok responses stays outside the lock
+        if not response.ok:
+            try:
+                error_data = response.json()
+            except (ValueError, json.JSONDecodeError):
+                error_data = {"error": response.text}
+            raise AirflowClientError(
+                f"Request failed: {response.status_code} {response.reason}",
+                status_code=response.status_code,
+                response=error_data,
+            )
+        if response.text.strip():
+            return response.json()
+        return {}
 
     def health_check(self) -> Dict:
         return self._request("GET", f"{self.API_PREFIX}/monitor/health")
 
     def list_dags(self, limit: int = 100, offset: int = 0) -> List[Dict]:
         endpoint = f"{self.API_PREFIX}/dags"
-        params = {"limit": limit, "offset": offset}
+        all_dags: List[Dict] = []
+        current_offset = offset
+        max_pages = 20
 
-        try:
-            response = self._request("GET", endpoint, params=params)
-            return response.get("dags", [])
-        except AirflowClientError:
-            raise
+        for _ in range(max_pages):
+            params = {"limit": limit, "offset": current_offset}
+            try:
+                response = self._request("GET", endpoint, params=params)
+                dags = response.get("dags", [])
+                all_dags.extend(dags)
+                if len(dags) < limit:
+                    break
+                current_offset += limit
+            except AirflowClientError:
+                raise
+
+        return all_dags
 
     def get_dag(self, dag_id: str) -> Dict:
         endpoint = f"{self.API_PREFIX}/dags/{dag_id}"
@@ -167,28 +174,13 @@ class AirflowClient:
             f"/taskInstances/{task_id}/logs/{try_number}"
         )
         try:
-            response = self.session.request("GET", f"{self.base_url}{endpoint}")
-            if not response.ok:
-                try:
-                    err = response.json()
-                    detail = err.get("detail") or err.get("title") or response.text[:200]
-                except Exception:
-                    detail = response.text[:200]
-                raise AirflowClientError(
-                    f"Log no disponible (HTTP {response.status_code}): {detail}",
-                    status_code=response.status_code,
-                )
-            # Airflow 3.x: {"content": <list|str>, "continuation_token": ...}
-            try:
-                data = response.json()
-                if isinstance(data, dict) and "content" in data:
-                    return format_airflow_log(data["content"])
-            except (ValueError, json.JSONDecodeError):
-                pass
-            return response.text
+            data = self._request("GET", endpoint)
+            if isinstance(data, dict) and "content" in data:
+                return format_airflow_log(data["content"])
+            return json.dumps(data) if data else ""
+        except AirflowClientError:
+            raise
         except RequestException as exc:
-            if isinstance(exc, AirflowClientError):
-                raise
             raise AirflowClientError(f"Error de red al obtener log: {exc}") from exc
 
     def pause_dag(self, dag_id: str, paused: bool = True) -> Dict:

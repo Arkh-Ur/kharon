@@ -13,6 +13,9 @@ airflow_venv/
 .venv/
 venv/
 
+# uv
+uv.lock
+
 # Airflow
 airflow_home/airflow.db
 airflow_home/airflow.db-shm
@@ -46,3 +49,15 @@ Thumbs.db
 *.pem
 *.key
 credentials.*
+
+# Playwright artifacts
+tests/e2e/screenshots/
+tests/e2e/comprehensive_e2e.py
+tests/e2e/comprehensive_test.py
+tests/e2e/manual_test_screenshot.png
+tests/e2e/tablero_clicked_screenshot.png
+/tmp/*.png
+
+# Generated DAG files (managed by the webapp, not versioned)
+airflow_home/dags/*.py
+!airflow_home/dags/__init__.py

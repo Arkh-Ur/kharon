@@ -5,14 +5,15 @@ Provides robust script execution with timeout handling, result parsing, and comp
 """
 
 import dataclasses
+import json
 import logging
 import os
+import platform
+import shutil
 import subprocess
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-
-import yaml
 
 logger = logging.getLogger("kharon.runner")
 
@@ -116,7 +117,12 @@ class ScriptRunner:
                 exit_code = process.returncode
             except subprocess.TimeoutExpired:
                 process.kill()
-                stdout, stderr = process.communicate()
+                try:
+                    stdout, stderr = process.communicate()
+                except Exception:
+                    stdout, stderr = "", ""
+                stdout = stdout or ""
+                stderr = stderr or ""
                 timed_out = True
                 exit_code = -1
                 
@@ -163,9 +169,20 @@ class ScriptRunner:
             Command to use for script execution ("python3" or "bash")
         """
         path_obj = Path(script_path)
-        
+
         if path_obj.suffix.lower() in ['.sh', '.bash']:
+            # On Windows, look for bash (Git Bash, WSL, or Cygwin)
+            if platform.system() == 'Windows':
+                for candidate in ['bash', 'wsl', 'wsl.exe']:
+                    if shutil.which(candidate):
+                        return candidate
+                raise FileNotFoundError(
+                    f"No bash interpreter found for {script_path}. "
+                    "Install Git for Windows, WSL2, or run Airflow inside Podman."
+                )
             return 'bash'
+        elif path_obj.suffix.lower() == '.ps1':
+            return 'powershell'
         else:
             return self.python
             
@@ -187,8 +204,8 @@ class ScriptRunner:
             
         try:
             result_json = result_lines[0][7:]
-            return yaml.safe_load(result_json)
+            return json.loads(result_json)
             
-        except (yaml.YAMLError, ValueError) as e:
+        except (json.JSONDecodeError, ValueError) as e:
             logger.warning(f"Failed to parse RESULT from stdout: {e}")
             return None

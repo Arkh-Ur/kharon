@@ -1,9 +1,11 @@
 import os
+import re
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import streamlit as st
 
-from utils import describe_cron
+from utils import describe_cron, safe_html
 
 
 _STEPS = [
@@ -38,6 +40,12 @@ def render_script_form(
     step = st.session_state.form_step
     st.markdown(f"### {_STEPS[step]}")
     _render_step_progress(step)
+
+    if st.button("🗑️ Limpiar formulario", key="clear_form"):
+        for key in list(st.session_state.keys()):
+            if key.startswith("form_"):
+                del st.session_state[key]
+        st.rerun()
 
     result = None
 
@@ -162,12 +170,75 @@ def _step_basic_info(existing_scripts: List[dict]) -> Optional[Dict]:
 
 
 def _step_script_config() -> Optional[Dict]:
-    script_path = st.text_input(
-        "Ruta del Script *",
-        value=st.session_state.form_data.get("script_path", ""),
-        key="sf_script_path",
-        placeholder="/ruta/al/script.sh",
-    ).strip()
+    # Process pending selections from file browser BEFORE creating widgets
+    _pending_nav = st.session_state.pop("_pending_browse_root", None)
+    if _pending_nav:
+        st.session_state.browse_root = _pending_nav
+        st.session_state["browse_root_input"] = _pending_nav
+    _pending_proj = st.session_state.pop("_pending_project_path", None)
+    if _pending_proj is not None:
+        st.session_state.form_data["project_path"] = _pending_proj
+        st.session_state["sf_project_path"] = _pending_proj
+    _pending_script = st.session_state.pop("_pending_script_path", None)
+    if _pending_script is not None:
+        st.session_state.form_data["script_path"] = _pending_script
+        st.session_state["sf_script_path"] = _pending_script
+    _pending_config = st.session_state.pop("_pending_config_path", None)
+    if _pending_config is not None:
+        st.session_state.form_data["config_file"] = _pending_config
+        st.session_state["sf_config_file"] = _pending_config
+
+    project_path = st.session_state.form_data.get("project_path", "")
+    script_path = st.session_state.form_data.get("script_path", "")
+    config_file = st.session_state.form_data.get("config_file", "")
+
+    _browse_mode = st.session_state.get("_browse_mode", "")
+
+    col_proj, col_browse = st.columns([3, 1])
+    with col_proj:
+        project_path = st.text_input(
+            "Ruta del Proyecto *",
+            value=project_path,
+            key="sf_project_path",
+            placeholder="/ruta/al/proyecto",
+        ).strip()
+    with col_browse:
+        if st.button("📂 Explorar", key="sf_browse_project"):
+            st.session_state.browse_root = project_path if project_path and os.path.isdir(project_path) else os.path.expanduser("~")
+            st.session_state.browse_root_input = project_path if project_path and os.path.isdir(project_path) else os.path.expanduser("~")
+            st.session_state._browse_mode = "project"
+            st.rerun()
+
+    if _browse_mode == "project":
+        _render_file_browser(mode="project")
+
+    col_script, col_script_browse = st.columns([3, 1])
+    with col_script:
+        script_path = st.text_input(
+            "Script Principal *",
+            value=script_path,
+            key="sf_script_path",
+            placeholder="scripts/run_etl.sh (relativo al proyecto)",
+        ).strip()
+    with col_script_browse:
+        if project_path and os.path.isdir(project_path) and st.button("📂 Explorar", key="sf_browse_script"):
+            st.session_state.browse_root = project_path
+            st.session_state.browse_root_input = project_path
+            st.session_state._browse_mode = "script"
+            st.rerun()
+
+    if _browse_mode == "script":
+        _render_file_browser(mode="script")
+
+    if script_path:
+        if os.path.isabs(script_path):
+            if os.path.isfile(script_path):
+                project_path = os.path.dirname(script_path)
+                script_path = os.path.basename(script_path)
+                st.info(f"📁 Ruta detectada: proyecto='{project_path}', script='{script_path}'")
+            else:
+                st.warning(f"⚠️ El archivo no existe: {script_path}")
+
     interpreter = st.selectbox(
         "Intérprete",
         options=["bash", "python", "sh"],
@@ -190,35 +261,193 @@ def _step_script_config() -> Optional[Dict]:
         key="sf_retries",
     )
 
-    if script_path and script_path.startswith("~"):
-        script_path = os.path.expanduser(script_path)
+    col_cfg, col_cfg_browse = st.columns([3, 1])
+    with col_cfg:
+        config_file = st.text_input(
+            "Archivo de configuración (opcional)",
+            value=config_file,
+            key="sf_config_file",
+            placeholder="config.yaml (relativo al proyecto)",
+        ).strip()
+    with col_cfg_browse:
+        if project_path and os.path.isdir(project_path) and st.button("📂 Explorar", key="sf_browse_config"):
+            st.session_state.browse_root = project_path
+            st.session_state.browse_root_input = project_path
+            st.session_state._browse_mode = "config"
+            st.rerun()
+
+    if _browse_mode == "config":
+        _render_file_browser(mode="config")
+
+    if config_file:
+        full_cfg_path = config_file if os.path.isabs(config_file) else os.path.join(project_path, config_file)
+        _allowed_root = Path(project_path).resolve() if project_path else None
+        _safe_cfg = True
+        if _allowed_root:
+            try:
+                _safe_cfg = Path(full_cfg_path).resolve().is_relative_to(_allowed_root)
+            except Exception:
+                _safe_cfg = False
+        if not _safe_cfg:
+            st.warning("⚠️ Config fuera del directorio del proyecto")
+        elif os.path.isfile(full_cfg_path):
+            st.success(f"✅ Config encontrado: {full_cfg_path}")
+            with st.expander("📄 Vista previa del config"):
+                try:
+                    with open(full_cfg_path, "r", encoding="utf-8") as f:
+                        preview = f.read(3000)
+                    ext = os.path.splitext(full_cfg_path)[1]
+                    lang = {'.py': 'python', '.sh': 'bash', '.yaml': 'yaml', '.yml': 'yaml', '.json': 'json', '.toml': 'toml', '.env': 'bash'}.get(ext, '')
+                    st.code(preview, language=lang)
+                except Exception:
+                    st.warning("No se pudo leer el archivo")
+        else:
+            st.warning(f"⚠️ El config no existe en el proyecto: {config_file}")
 
     can_continue = False
-    if script_path and not os.path.isabs(script_path):
-        st.info("Usá una ruta absoluta para el script.")
-    elif script_path and os.path.isfile(script_path):
-        st.success(f"✅ Script encontrado: {script_path}")
-        can_continue = True
-        with st.expander("Vista previa del script"):
-            try:
-                with open(script_path, "r") as f:
-                    preview = f.read(5000)
-                st.code(preview, language=interpreter)
-            except Exception:
-                st.warning("No se pudo leer el archivo.")
-    elif script_path:
-        st.warning(f"⚠️ El archivo no existe: {script_path}")
+    if project_path and script_path:
+        full_script_path = os.path.join(project_path, script_path)
+        _allowed_root = Path(project_path).resolve()
+        _safe_script = Path(full_script_path).resolve().is_relative_to(_allowed_root)
+        if not _safe_script:
+            st.warning("⚠️ Ruta fuera del directorio del proyecto")
+        elif os.path.isfile(full_script_path):
+            st.success(f"✅ Script encontrado: {full_script_path}")
+            can_continue = True
+            with st.expander("Vista previa del script"):
+                try:
+                    with open(full_script_path, "r", encoding="utf-8") as f:
+                        preview = f.read(5000)
+                    st.code(preview, language=interpreter)
+                except Exception:
+                    st.warning("No se pudo leer el archivo")
+        elif not os.path.isdir(project_path):
+            st.warning(f"⚠️ El directorio del proyecto no existe: {project_path}")
+        else:
+            st.warning(f"⚠️ El script no existe en el proyecto: {script_path}")
 
     if can_continue:
         st.session_state.form_data.update({
+            "project_path": project_path,
             "script_path": script_path,
             "interpreter": interpreter,
             "timeout": timeout,
             "retries": retries,
+            "config_file": config_file,
         })
 
     _nav_buttons(can_continue, "config")
     return None
+
+
+def _render_file_browser(mode="project") -> None:
+    browse_root = st.session_state.get("browse_root", os.path.expanduser("~"))
+
+    with st.expander("📂 Explorar archivos", expanded=True):
+        st.text_input("Ruta actual", value=browse_root, key="browse_root_input")
+
+        current_root = st.session_state.browse_root_input
+        if current_root != browse_root:
+            _home = os.path.expanduser("~")
+            _project = st.session_state.get("sf_project_path", "")
+            _allowed = [os.path.abspath(_home)]
+            if _project:
+                _allowed.append(os.path.abspath(_project))
+            _root_ok = any(
+                Path(os.path.abspath(current_root)).is_relative_to(Path(a))
+                for a in _allowed
+            )
+            if not _root_ok:
+                st.warning("⚠️ Solo se puede navegar dentro del directorio home o del proyecto.")
+                current_root = _home
+            browse_root = current_root
+            st.session_state.browse_root = current_root
+
+        if not os.path.isdir(browse_root):
+            st.warning("⚠️ La ruta no existe o no es un directorio")
+            if st.button("✕ Cerrar explorador", key="close_browser"):
+                st.session_state.pop("browse_root", None)
+                st.session_state.pop("_browse_mode", None)
+                st.rerun()
+            return
+
+        st.caption(f"📍 {browse_root}")
+
+        parent = os.path.dirname(browse_root)
+        col_up, col_select = st.columns(2)
+        with col_up:
+            if st.button("⬆ Subir", key="browse_up", use_container_width=True):
+                st.session_state._pending_browse_root = parent
+                st.rerun()
+        with col_select:
+            if mode == "project" and st.button("✅ Usar esta carpeta", key="browse_select_dir", use_container_width=True, type="primary"):
+                st.session_state._pending_project_path = browse_root
+                st.session_state.pop("browse_root", None)
+                st.session_state.pop("_browse_mode", None)
+                st.rerun()
+
+        try:
+            entries = sorted(os.listdir(browse_root))
+        except PermissionError:
+            st.error("Sin permisos para leer este directorio")
+            return
+
+        dirs = [e for e in entries if os.path.isdir(os.path.join(browse_root, e)) and not e.startswith('.')]
+
+        files = []
+        if mode in ("script", "config"):
+            if mode == "config":
+                file_exts = ('.yaml', '.yml', '.json', '.toml', '.env', '.cfg', '.ini', '.conf')
+            else:
+                file_exts = ('.py', '.sh', '.bash')
+            files = [e for e in entries if os.path.isfile(os.path.join(browse_root, e)) and not e.startswith('.') and e.endswith(file_exts)]
+
+        if dirs:
+            st.markdown("**📁 Directorios**")
+            cols_per_row = 3
+            for i in range(0, len(dirs), cols_per_row):
+                row_dirs = dirs[i:i + cols_per_row]
+                cols = st.columns(len(row_dirs))
+                for j, d in enumerate(row_dirs):
+                    with cols[j]:
+                        if st.button(f"📁 {d}", key=f"dir_{i}_{j}_{d[:20]}", use_container_width=True):
+                            st.session_state._pending_browse_root = os.path.join(browse_root, d)
+                            st.rerun()
+
+        if files and mode in ("script", "config"):
+            st.markdown("**📄 Archivos**")
+            for f in files:
+                col_file, col_btn = st.columns([3, 1])
+                with col_file:
+                    st.text(f"  {f}")
+                with col_btn:
+                    _btn_key = f"pick_{mode}_{f[:20]}"
+                    if st.button("📄", key=_btn_key, help=f"Seleccionar {f}"):
+                        full_path = os.path.join(browse_root, f)
+                        project_path = st.session_state.get("sf_project_path", "")
+                        if project_path and os.path.isdir(project_path):
+                            try:
+                                if not Path(full_path).resolve().is_relative_to(Path(project_path).resolve()):
+                                    st.warning("⚠️ El archivo está fuera del directorio del proyecto")
+                                    st.rerun()
+                            except Exception:
+                                st.warning("⚠️ No se pudo verificar la ruta del archivo.")
+                                st.stop()
+                            rel = os.path.relpath(full_path, project_path)
+                        else:
+                            rel = full_path
+                        if mode == "script":
+                            st.session_state._pending_script_path = rel
+                        else:
+                            st.session_state._pending_config_path = rel
+                        st.session_state.pop("browse_root", None)
+                        st.session_state.pop("_browse_mode", None)
+                        st.rerun()
+
+        if st.button("✕ Cerrar explorador", key="close_browser"):
+            st.session_state.pop("browse_root", None)
+            st.session_state.pop("_browse_mode", None)
+            st.rerun()
 
 
 def _step_client_assignment(clients: List[dict]) -> Optional[Dict]:
@@ -227,7 +456,7 @@ def _step_client_assignment(clients: List[dict]) -> Optional[Dict]:
         _nav_buttons(False, "client")
         return None
 
-    client_options = {c.get("name", ""): c.get("id", c.get("name", "").lower().replace(" ", "_")) for c in clients}
+    client_options = {c.get("name", ""): c.get("id", re.sub(r'_+', '_', re.sub(r'[^a-z0-9_]', '_', c.get("name", "").lower())).strip('_')) for c in clients if re.sub(r'_+', '_', re.sub(r'[^a-z0-9_]', '_', c.get("name", "").lower())).strip('_')}
     client_names = list(client_options.keys())
     default_idx = 0
     saved = st.session_state.form_data.get("client")
@@ -271,7 +500,7 @@ def _step_schedule_tags() -> Optional[Dict]:
             "scheduled": "📅 Agendado — según horario cron",
         }[x],
         index=["on_demand", "continuous", "scheduled"].index(
-            st.session_state.form_data.get("execution_mode", "scheduled")
+            st.session_state.form_data.get("execution_mode", "on_demand")
         ),
         key="sf_execution_mode",
     )
@@ -351,7 +580,7 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
 
     st.markdown("#### Resumen del Script")
     st.markdown(
-        '<div style="background:#131923;border:1px solid #2d3748;border-radius:10px;padding:20px;">',
+        '<div style="background:#111827;border:1px solid rgba(59,130,246,0.1);border-radius:12px;padding:16px 20px;">',
         unsafe_allow_html=True,
     )
 
@@ -364,14 +593,15 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
     }
 
     review_rows = [
-        ("📋 Nombre", fd.get('name', '—')),
-        ("📝 Descripción", fd.get('description') or '—'),
-        ("🔴 Criticalidad", fd.get('criticality', '—')),
-        ("🔧 Intérprete", fd.get('interpreter', '—')),
-        ("📂 Ruta", fd.get('script_path', '—')),
-        ("🏢 Cliente", fd.get('client', '—')),
-        ("⏱ Modo", mode_display.get(fd.get('execution_mode', ''), '—')),
-        ("🏷 Tags", ', '.join(fd.get('tags', [])) or '—'),
+        ("📋 Nombre", safe_html(fd.get('name', '—'))),
+        ("📝 Descripción", safe_html(fd.get('description') or '—')),
+        ("🔴 Criticalidad", safe_html(fd.get('criticality', '—'))),
+        ("🔧 Intérprete", safe_html(fd.get('interpreter', '—'))),
+        ("📂 Ruta", safe_html(fd.get('script_path', '—'))),
+        ("📄 Config", safe_html(fd.get('config_file') or '—')),
+        ("🏢 Cliente", safe_html(fd.get('client', '—'))),
+        ("⏱ Modo", safe_html(mode_display.get(fd.get('execution_mode', ''), '—'))),
+        ("🏷 Tags", safe_html(', '.join(fd.get('tags', [])) or '—')),
         ("⏰ Timeout", f"{fd.get('timeout', 3600)}s"),
         ("🔁 Reintentos", str(fd.get('retries', 2))),
     ]
@@ -379,9 +609,9 @@ def _step_review(clients: List[dict]) -> Optional[Dict]:
     for label, value in review_rows:
         st.markdown(
             f'<div style="display:flex;justify-content:space-between;padding:8px 0;'
-            f'border-bottom:1px solid #1E2632;">'
-            f'<span style="color:#9ca3af;font-size:0.9em;">{label}</span>'
-            f'<span style="color:#e5e7eb;font-size:0.9em;font-weight:500;">{value}</span>'
+            f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+            f'<span style="color:#6b7280;font-size:10px;letter-spacing:1px;text-transform:uppercase;">{label}</span>'
+            f'<span style="font-size:0.9em;font-weight:500;color:#e5e7eb;font-family:monospace;">{value}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )

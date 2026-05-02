@@ -19,6 +19,10 @@ from utils.logger import get_task_logger
 logger = get_task_logger(__name__)
 
 
+class _ScriptFailedError(RuntimeError):
+    """Script ran but returned non-zero. Monitoring already recorded — skip outer re-record."""
+
+
 class KharonOperator(BaseOperator):
     """
     Custom Airflow operator for executing Kharōn scripts with monitoring.
@@ -72,11 +76,6 @@ class KharonOperator(BaseOperator):
         self.args = args or []
         self.env_vars = env_vars or {}
         
-        self.retries = retries
-        
-        self.monitor = ScriptMonitor()
-        self.script_runner = ScriptRunner(timeout=timeout, python=python)
-        
     def _derive_script_id(self, script_path: str) -> str:
         """
         Derive script ID from script path filename.
@@ -103,9 +102,11 @@ class KharonOperator(BaseOperator):
             RuntimeError: If script execution fails
         """
         self.log.info(f"Starting script execution: {self.script_path} (ID: {self.script_id})")
-        
+        monitor = ScriptMonitor()
+        script_runner = ScriptRunner(timeout=self.timeout, python=self.python)
+
         if self.skip_if_unhealthy:
-            health = self.monitor.get_script_health(self.script_id)
+            health = monitor.get_script_health(self.script_id)
             if (not health.is_healthy and 
                 health.consecutive_failures >= self.max_consecutive_failures):
                 self.log.warning(
@@ -121,14 +122,14 @@ class KharonOperator(BaseOperator):
                 }
         
         try:
-            result = self.script_runner.run_script(
+            result = script_runner.run_script(
                 script_path=self.script_path,
                 args=self.args,
                 env_vars=self.env_vars
             )
             
             # Record execution in monitoring
-            self.monitor.record_execution(
+            monitor.record_execution(
                 script_id=self.script_id,
                 status='success' if result.success else 'failed',
                 exit_code=result.exit_code,
@@ -149,7 +150,7 @@ class KharonOperator(BaseOperator):
                 xcom_data['parsed_result'] = result.parsed_result
             
             rules = self._get_monitoring_rules()
-            alerts = self.monitor.evaluate_rules(self.script_id, rules)
+            alerts = monitor.evaluate_rules(self.script_id, rules)
             
             if alerts:
                 self.log.warning(f"Triggered {len(alerts)} monitoring alerts for {self.script_id}")
@@ -173,10 +174,12 @@ class KharonOperator(BaseOperator):
             )
             
             context['ti'].xcom_push(key='return_value', value=xcom_data)
-            raise RuntimeError(f"Script execution failed: {error_msg}")
-            
+            raise _ScriptFailedError(f"Script execution failed: {error_msg}")
+
         except Exception as e:
-            self.monitor.record_execution(
+            if isinstance(e, _ScriptFailedError):
+                raise RuntimeError(str(e)) from e
+            monitor.record_execution(
                 script_id=self.script_id,
                 status='failed',
                 exit_code=-1,
@@ -185,7 +188,6 @@ class KharonOperator(BaseOperator):
                 stderr=str(e),
                 timeout_occurred=False
             )
-            
             self.log.error(f"Script {self.script_id} execution error: {e}")
             raise
             
