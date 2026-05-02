@@ -4,6 +4,8 @@
 # ============================================================================
 
 param(
+    [switch]$Podman,
+    [switch]$AutoUpdate,
     [string]$AirflowHost = "localhost",
     [string]$AirflowPort = "8080",
     [string]$AirflowUser = "admin",
@@ -13,6 +15,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# ── Podman all-in-one mode ──────────────────────────────────────────────────
+if ($Podman) {
+    $image = "kharon:latest"
+    if (-not (podman image exists $image 2>$null)) {
+        Write-Host "[INFO] Building $image..." -ForegroundColor Green
+        podman build -t $image $ScriptDir
+    }
+    podman run -it --rm `
+      --name kharon `
+      -p 8080:8080 -p 8501:8501 `
+      -v "${ScriptDir}/airflow_home:/opt/airflow:Z" `
+      -e AUTO_UPDATE=$(if ($AutoUpdate) {"true"} else {"false"}) `
+      -e KHARON_AIRFLOW_PASSWORD="${AirflowPassword}" `
+      $image
+    return
+}
 
 Write-Host ""
 Write-Host "  ╔══════════════════════════════════════════╗" -ForegroundColor Cyan
