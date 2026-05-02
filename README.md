@@ -57,81 +57,188 @@ La contraseña de Airflow se genera automáticamente en `airflow_home/simple_aut
 
 ---
 
-## Instalación en Windows
+## Instalación con Contenedor (Windows / Linux / macOS)
 
-Airflow no tiene soporte oficial nativo en Windows. Hay dos métodos recomendados.
+> La forma más simple de correr Kharōn. **No requiere instalar Python ni clonar el repositorio.**
+> La imagen se publica automáticamente en `ghcr.io/arkh-ur/kharon` via GitHub Actions.
 
 ---
 
-### Método 1: Podman — All-in-One (recomendado)
+### Paso 1 — Instalar Podman
 
-Airflow, PostgreSQL y la webapp Kharōn corren juntos en un único contenedor.
-La imagen se construye automáticamente en GitHub Actions y se publica en `ghcr.io`.
+Descargá e instalá **[Podman Desktop](https://podman-desktop.io/)** (incluye todo lo necesario).
 
-#### Requisitos
+> También funciona con Docker — reemplazá `podman` por `docker` en los comandos y quitá `:Z` de los volúmenes.
 
-- [Podman](https://podman.io/) o [Podman Desktop](https://podman-desktop.io/)
+---
 
-#### Inicio rápido (imagen pre-construida)
+### Paso 2 — Crear la carpeta de datos
 
+Esta carpeta guarda toda la información de Kharōn (DAGs, clientes, scripts) entre reinicios.
+
+**Linux / macOS** — en una terminal:
 ```bash
-# Descargar imagen publicada en GitHub Container Registry
-podman pull ghcr.io/arkh-ur/kharon:latest
-
-# Clonar solo para obtener airflow_home/ (datos persistentes)
-git clone https://github.com/Arkh-Ur/kharon.git
-cd kharon
-
-# Iniciar
-chmod +x podman-run.sh && ./podman-run.sh        # Linux/macOS
-.\start_kharon.ps1 -Podman                        # Windows
+mkdir -p ~/kharon-data/airflow_home
 ```
+
+**Windows** — en PowerShell:
+```powershell
+New-Item -ItemType Directory -Force -Path C:\kharon-data\airflow_home
+```
+
+---
+
+### Paso 3 — Iniciar Kharōn
+
+**Linux / macOS:**
+```bash
+podman run -d --name kharon \
+  -p 8080:8080 \
+  -p 8501:8501 \
+  -v ~/kharon-data/airflow_home:/opt/airflow:Z \
+  ghcr.io/arkh-ur/kharon:latest
+```
+
+**Windows (PowerShell):**
+```powershell
+podman run -d --name kharon `
+  -p 8080:8080 `
+  -p 8501:8501 `
+  -v C:\kharon-data\airflow_home:/opt/airflow `
+  ghcr.io/arkh-ur/kharon:latest
+```
+
+> **Primera ejecución:** Podman descarga la imagen (~800 MB) y arranca Airflow. Esperá **1-2 minutos** antes de abrir el navegador.
+>
+> **Ejecuciones siguientes:** arranca en ~5 segundos.
+
+---
+
+### Paso 4 — Abrir la webapp
+
+Una vez iniciado, abrí estas URLs en el navegador:
 
 | Servicio | URL |
 |---|---|
-| Kharōn Webapp | http://localhost:8501 |
-| Airflow UI / API | http://localhost:8080 |
+| **Kharōn Webapp** | **http://localhost:8501** |
+| Airflow UI | http://localhost:8080 |
 
-#### Construir la imagen localmente (opcional)
+---
+
+### Paso 5 — Obtener la contraseña de Airflow
+
+La contraseña se genera automáticamente la primera vez. Para verla:
 
 ```bash
-podman build -t ghcr.io/arkh-ur/kharon:latest .
+podman exec kharon cat /opt/airflow/simple_auth_manager_passwords.json.generated
 ```
 
-#### Mantener actualizado
+Verás algo como: `{"admin": "xK9mPqR2"}` — el valor entre comillas es la contraseña.
+El usuario siempre es `admin`.
+
+---
+
+### Detener y reiniciar
 
 ```bash
-# Reconstruir con el último código del repo:
-podman rmi kharon:latest && ./podman-run.sh
+# Detener
+podman stop kharon
 
-# O actualizar automáticamente al iniciar (sin rebuild):
-AUTO_UPDATE=true ./podman-run.sh        # Linux/macOS
-.\start_kharon.ps1 -Podman -AutoUpdate  # Windows
-```
+# Reiniciar (los datos persisten)
+podman start kharon
 
-#### Build con tag específico
-
-```bash
-podman build --build-arg KHARON_BRANCH=v0.5.1 -t kharon:v0.5.1 .
-```
-
-#### Datos persistentes
-
-Solo `airflow_home/` se monta como volumen — DAGs generados, registros de clientes y scripts externos persisten entre reinicios.
-
-#### Verificación
-
-```bash
-curl http://localhost:8080/api/v2/monitor/health
-curl http://localhost:8501/_stcore/health
-
-# Ver versión corriendo
-podman exec kharon git -C /opt/kharon describe --tags --always
+# Ver logs si algo no arranca
+podman logs kharon --tail 30
 ```
 
 ---
 
-### Método 2: WSL2
+### Actualizar a una nueva versión
+
+```bash
+podman stop kharon && podman rm kharon
+podman pull ghcr.io/arkh-ur/kharon:latest
+```
+
+Luego repetí el comando del **Paso 3**.
+
+---
+
+<details>
+<summary><strong>Opciones avanzadas</strong></summary>
+
+#### Exponer scripts del host al contenedor
+
+Para gestionar scripts que ya tenés en tu máquina, agregá un volumen adicional:
+
+```bash
+# Linux / macOS
+podman run -d --name kharon \
+  -p 8080:8080 -p 8501:8501 \
+  -v ~/kharon-data/airflow_home:/opt/airflow:Z \
+  -v /ruta/a/tus/scripts:/scripts:Z \
+  ghcr.io/arkh-ur/kharon:latest
+```
+
+Al registrar un nuevo script desde la webapp usá la ruta `/scripts/...`.
+
+#### Tags de imagen disponibles
+
+| Tag | Se publica | Uso recomendado |
+|---|---|---|
+| `latest` | Cada push a `main` | Staging / siempre actualizado |
+| `0.6.1` | Al crear el tag `v0.6.1` | **Producción** (versión fija) |
+| `sha-a1b2c3` | Cada commit | Traceability / rollback |
+
+```bash
+# Usar versión fija para producción
+podman run ... ghcr.io/arkh-ur/kharon:0.6.1
+
+# Ver qué versión está corriendo
+podman exec kharon git -C /opt/kharon describe --tags --always
+```
+
+#### Auto-update al iniciar
+
+Con `AUTO_UPDATE=true` el contenedor hace `git pull` antes de arrancar (útil en staging):
+
+```bash
+podman run -d --name kharon \
+  -e AUTO_UPDATE=true \
+  -p 8080:8080 -p 8501:8501 \
+  -v ~/kharon-data/airflow_home:/opt/airflow:Z \
+  ghcr.io/arkh-ur/kharon:latest
+```
+
+#### Script launcher (si ya clonaste el repo)
+
+```bash
+git clone https://github.com/Arkh-Ur/kharon.git && cd kharon
+chmod +x podman-run.sh && ./podman-run.sh   # Linux/macOS
+.\start_kharon.ps1 -Podman                  # Windows PowerShell
+```
+
+#### Construir la imagen localmente
+
+```bash
+git clone https://github.com/Arkh-Ur/kharon.git && cd kharon
+podman build -t ghcr.io/arkh-ur/kharon:latest .
+
+# Con tag específico
+podman build --build-arg KHARON_BRANCH=v0.6.1 -t kharon:v0.6.1 .
+```
+
+</details>
+
+---
+
+## Instalación en Windows (nativa sin contenedor)
+
+Airflow no tiene soporte oficial nativo en Windows. Si no querés usar contenedor, la alternativa es WSL2.
+
+---
+
+### WSL2
 
 Corre todo el stack de Kharōn dentro de Windows Subsystem for Linux. La experiencia es idéntica a Linux nativa.
 
