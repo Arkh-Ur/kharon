@@ -1528,121 +1528,121 @@ def _page_processes() -> None:
                 # ── Action bar ──
                 col_log, col_cfg, col_pause, col_del = st.columns(4)
 
-            with col_log:
-                if runs:
-                    last_run_id = runs[0].get("dag_run_id", "")
-                    _log_key = f"log_data_{dag_id}"
-                    if st.button("📄 Log", key=f"log_{dag_id}", use_container_width=True):
+                with col_log:
+                    if runs:
+                        last_run_id = runs[0].get("dag_run_id", "")
+                        _log_key = f"log_data_{dag_id}"
+                        if st.button("📄 Log", key=f"log_{dag_id}", use_container_width=True):
+                            try:
+                                tasks = client.list_task_instances(dag_id, last_run_id)
+                                parts = []
+                                for task in tasks:
+                                    task_id = task.get("task_id", "")
+                                    task_state = task.get("state")
+                                    try_n = int(task.get("try_number") or 0)
+                                    _NO_LOG = {"queued", "scheduled", "no_status", "none", None}
+                                    if task_state in _NO_LOG or try_n == 0:
+                                        parts.append(f"=== {task_id} === [{task_state or 'sin estado'}] sin log todavía")
+                                        continue
+                                    try_n = max(try_n, 1)
+                                    try:
+                                        log = client.get_task_log(dag_id, last_run_id, task_id, try_n)
+                                        if log:
+                                            parts.append(f"=== {task_id} (intento {try_n}) ===\n{log}")
+                                    except AirflowClientError as log_err:
+                                        parts.append(f"=== {task_id} === Error: {log_err}")
+                                st.session_state[_log_key] = "\n\n".join(parts) if parts else "(sin contenido de log)"
+                            except Exception as exc:
+                                st.session_state[_log_key] = f"Error al obtener log: {exc}"
+    
+                with col_cfg:
+                    if st.button("⚙ Config", key=f"cfg_{dag_id}", use_container_width=True):
+                        st.session_state[_config_show_key] = not st.session_state.get(_config_show_key, False)
+    
+                with col_pause:
+                    _pause_label = "▶️ Activar" if _is_paused else "⏸ Pausar"
+                    _pause_type = "primary" if _is_paused else "secondary"
+                    if st.button(_pause_label, key=f"pause_{dag_id}", use_container_width=True, type=_pause_type):
                         try:
-                            tasks = client.list_task_instances(dag_id, last_run_id)
-                            parts = []
-                            for task in tasks:
-                                task_id = task.get("task_id", "")
-                                task_state = task.get("state")
-                                try_n = int(task.get("try_number") or 0)
-                                _NO_LOG = {"queued", "scheduled", "no_status", "none", None}
-                                if task_state in _NO_LOG or try_n == 0:
-                                    parts.append(f"=== {task_id} === [{task_state or 'sin estado'}] sin log todavía")
-                                    continue
-                                try_n = max(try_n, 1)
-                                try:
-                                    log = client.get_task_log(dag_id, last_run_id, task_id, try_n)
-                                    if log:
-                                        parts.append(f"=== {task_id} (intento {try_n}) ===\n{log}")
-                                except AirflowClientError as log_err:
-                                    parts.append(f"=== {task_id} === Error: {log_err}")
-                            st.session_state[_log_key] = "\n\n".join(parts) if parts else "(sin contenido de log)"
-                        except Exception as exc:
-                            st.session_state[_log_key] = f"Error al obtener log: {exc}"
-
-            with col_cfg:
-                if st.button("⚙ Config", key=f"cfg_{dag_id}", use_container_width=True):
-                    st.session_state[_config_show_key] = not st.session_state.get(_config_show_key, False)
-
-            with col_pause:
-                _pause_label = "▶️ Activar" if _is_paused else "⏸ Pausar"
-                _pause_type = "primary" if _is_paused else "secondary"
-                if st.button(_pause_label, key=f"pause_{dag_id}", use_container_width=True, type=_pause_type):
-                    try:
-                        client.pause_dag(dag_id, paused=not _is_paused)
-                        _get_kharon_dags.clear()
-                        _get_kharon_dag_list.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error al cambiar estado: {e}")
-
-            with col_del:
-                if st.button("🗑 Eliminar", key=f"del_{dag_id}", use_container_width=True):
-                    st.session_state[f"confirm_del_{dag_id}"] = True
-
-            # ── Mode switcher (full width, below action bar) ──
-            _script_meta = _registry.get(dag_id, {})
-            _current_mode = _script_meta.get("execution_mode", "on_demand")
-            _has_registry_entry = bool(_script_meta)
-
-            if _has_registry_entry:
-                _mode_key = f"mode_{dag_id}"
-                if _mode_key not in st.session_state:
-                    st.session_state[_mode_key] = _current_mode
-
-                _mode_options = ["on_demand", "continuous", "scheduled"]
-                _mode_labels = {
-                    "on_demand": "🎯 Demanda",
-                    "continuous": "🔄 Continuo",
-                    "scheduled": "📅 Agendado",
-                }
-
-                _new_mode = st.selectbox(
-                    "Modo de ejecución",
-                    options=_mode_options,
-                    index=_mode_options.index(st.session_state[_mode_key]),
-                    format_func=lambda x: _mode_labels.get(x, x),
-                    key=f"mode_sb_{dag_id}",
-                    label_visibility="collapsed",
-                )
-                st.session_state[_mode_key] = _new_mode
-
-                _schedule_val = None
-                if _new_mode == "scheduled":
-                    _sched_key = f"sched_{dag_id}"
-                    _current_sched = _script_meta.get("schedule", "0 6 * * *")
-                    if _sched_key not in st.session_state:
-                        st.session_state[_sched_key] = _current_sched
-                    _schedule_val = st.text_input(
-                        "Cron",
-                        value=st.session_state[_sched_key],
-                        key=f"cron_{dag_id}",
-                        placeholder="0 6 * * *",
+                            client.pause_dag(dag_id, paused=not _is_paused)
+                            _get_kharon_dags.clear()
+                            _get_kharon_dag_list.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al cambiar estado: {e}")
+    
+                with col_del:
+                    if st.button("🗑 Eliminar", key=f"del_{dag_id}", use_container_width=True):
+                        st.session_state[f"confirm_del_{dag_id}"] = True
+    
+                # ── Mode switcher (full width, below action bar) ──
+                _script_meta = _registry.get(dag_id, {})
+                _current_mode = _script_meta.get("execution_mode", "on_demand")
+                _has_registry_entry = bool(_script_meta)
+    
+                if _has_registry_entry:
+                    _mode_key = f"mode_{dag_id}"
+                    if _mode_key not in st.session_state:
+                        st.session_state[_mode_key] = _current_mode
+    
+                    _mode_options = ["on_demand", "continuous", "scheduled"]
+                    _mode_labels = {
+                        "on_demand": "🎯 Demanda",
+                        "continuous": "🔄 Continuo",
+                        "scheduled": "📅 Agendado",
+                    }
+    
+                    _new_mode = st.selectbox(
+                        "Modo de ejecución",
+                        options=_mode_options,
+                        index=_mode_options.index(st.session_state[_mode_key]),
+                        format_func=lambda x: _mode_labels.get(x, x),
+                        key=f"mode_sb_{dag_id}",
                         label_visibility="collapsed",
                     )
-                    st.session_state[_sched_key] = _schedule_val
-
-                _mode_changed = _new_mode != _current_mode
-                _sched_changed = _new_mode == "scheduled" and _schedule_val != _script_meta.get("schedule")
-                if _mode_changed or _sched_changed:
-                    if st.button("✓ Aplicar", key=f"apply_mode_{dag_id}", use_container_width=True):
-                        try:
-                            generator = _get_dag_generator()
-                            gen_result = generator.update_execution_mode(
-                                script_id=dag_id,
-                                execution_mode=_new_mode,
-                                schedule=_schedule_val,
-                            )
-                            if gen_result.success:
-                                af_client = _get_airflow_client()
-                                if _new_mode == "on_demand":
-                                    af_client.pause_dag(dag_id, paused=True)
+                    st.session_state[_mode_key] = _new_mode
+    
+                    _schedule_val = None
+                    if _new_mode == "scheduled":
+                        _sched_key = f"sched_{dag_id}"
+                        _current_sched = _script_meta.get("schedule", "0 6 * * *")
+                        if _sched_key not in st.session_state:
+                            st.session_state[_sched_key] = _current_sched
+                        _schedule_val = st.text_input(
+                            "Cron",
+                            value=st.session_state[_sched_key],
+                            key=f"cron_{dag_id}",
+                            placeholder="0 6 * * *",
+                            label_visibility="collapsed",
+                        )
+                        st.session_state[_sched_key] = _schedule_val
+    
+                    _mode_changed = _new_mode != _current_mode
+                    _sched_changed = _new_mode == "scheduled" and _schedule_val != _script_meta.get("schedule")
+                    if _mode_changed or _sched_changed:
+                        if st.button("✓ Aplicar", key=f"apply_mode_{dag_id}", use_container_width=True):
+                            try:
+                                generator = _get_dag_generator()
+                                gen_result = generator.update_execution_mode(
+                                    script_id=dag_id,
+                                    execution_mode=_new_mode,
+                                    schedule=_schedule_val,
+                                )
+                                if gen_result.success:
+                                    af_client = _get_airflow_client()
+                                    if _new_mode == "on_demand":
+                                        af_client.pause_dag(dag_id, paused=True)
+                                    else:
+                                        af_client.pause_dag(dag_id, paused=False)
+                                    st.toast(f"✅ Modo actualizado: {_mode_labels.get(_new_mode, _new_mode)}")
+                                    _get_kharon_dags.clear()
+                                    _get_kharon_dag_list.clear()
+                                    st.rerun()
                                 else:
-                                    af_client.pause_dag(dag_id, paused=False)
-                                st.toast(f"✅ Modo actualizado: {_mode_labels.get(_new_mode, _new_mode)}")
-                                _get_kharon_dags.clear()
-                                _get_kharon_dag_list.clear()
-                                st.rerun()
-                            else:
-                                st.error(f"Error: {', '.join(gen_result.errors)}")
-                        except Exception as e:
-                            st.error(f"Error al actualizar modo: {e}")
-
+                                    st.error(f"Error: {', '.join(gen_result.errors)}")
+                            except Exception as e:
+                                st.error(f"Error al actualizar modo: {e}")
+    
                 # ── Config editor (expanded) ──
                 if st.session_state.get(_config_show_key, False):
                     st.markdown(
