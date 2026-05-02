@@ -4,7 +4,7 @@
 
 **Arkh-Ur — Data Engineering Division**
 
-[![Version](https://img.shields.io/badge/version-0.5.1-blue)](https://github.com/Arkh-Ur/kharon/releases)
+[![Version](https://img.shields.io/badge/version-0.6.1-blue)](https://github.com/Arkh-Ur/kharon/releases)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
 [![Airflow](https://img.shields.io/badge/airflow-3.x-green)](https://airflow.apache.org/)
 [![License](https://img.shields.io/badge/license-Proprietary-red)]()
