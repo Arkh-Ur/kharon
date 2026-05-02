@@ -76,18 +76,24 @@ check_prerequisites() {
     log_info "Python: $(python3 --version)"
     
     if ! command -v uv &> /dev/null; then
-        log_error "uv not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh"
-        exit 1
+        log_info "uv not found — installing automatically..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh 2>&1 | tail -3
+        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+        if ! command -v uv &> /dev/null; then
+            log_error "uv installation failed. Install manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
+            exit 1
+        fi
     fi
     log_info "uv: $(uv --version)"
     
+    log_info "Syncing dependencies..."
     uv sync --extra dev --project "${KHARON_HOME}" 2>&1 | tail -1
     log_info "Dependencies synced"
     
     source "${VENV_DIR}/bin/activate"
     log_info "Virtual environment activated"
     
-    log_info "Airflow: $(airflow version 2>/dev/null || echo 'not installed')"
+    log_info "Airflow: $(airflow version 2>/dev/null || echo 'installing...')"
 }
 
 init_airflow() {
@@ -106,6 +112,12 @@ init_airflow() {
     export AIRFLOW__LOGGING__BASE_LOG_FOLDER="${AIRFLOW_HOME}/logs"
 
     airflow db migrate 2>&1 | tail -1 || log_warn "Airflow DB migration issue"
+
+    airflow users create \
+        --username "${KHARON_AIRFLOW_USER}" \
+        --firstname Kharōn --lastname Admin --role Admin \
+        --email admin@arkh-ur.com \
+        --password "${KHARON_AIRFLOW_PASSWORD}" 2>/dev/null || true
 
     log_info "Airflow initialized"
 }
