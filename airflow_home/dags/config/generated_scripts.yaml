@@ -1,3 +1,18 @@
+santa_elena_prueba:
+  client_id: santa_elena
+  config_file: ''
+  created_at: '2026-05-02T02:35:32.935097+00:00'
+  criticality: media
+  execution_mode: on_demand
+  project_path: /home/hbuddenberg/yay-paru
+  python: bash
+  retries: 2
+  schedule: null
+  script_id: santa_elena_prueba
+  script_name: Prueba
+  script_path: /home/hbuddenberg/yay-paru/yay-paru.sh
+  tags: []
+  timeout: 3600
 santa_elena_test:
   client_id: santa_elena
   config_file: airflow_home/scripts_externos/test/test.sh

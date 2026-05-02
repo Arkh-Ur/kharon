@@ -448,24 +448,16 @@ dag = DAG(
         return None
     
     def _build_dag_id(self, client_id: str, script_name: str) -> str:
-        """Build unique DAG ID from client_id and script_name with sequence.
-        
-        Args:
-            client_id: Client identifier
-            script_name: Script name
-            
-        Returns:
-            Unique DAG ID
-        """
-        raw = f"{client_id}_{script_name}"
-        base = self._sanitize_script_id(raw)
-        registry = self._load_registry()
-        if base not in registry:
-            return base
-        n = 2
-        while f"{base}_{n}" in registry:
-            n += 1
-        return f"{base}_{n}"
+        with self._lock:
+            raw = f"{client_id}_{script_name}"
+            base = self._sanitize_script_id(raw)
+            registry = self._load_registry()
+            if base not in registry:
+                return base
+            n = 2
+            while f"{base}_{n}" in registry:
+                n += 1
+            return f"{base}_{n}"
     
     @staticmethod
     def _sanitize_for_python(value: str) -> str:
