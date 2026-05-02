@@ -25,8 +25,18 @@ export AIRFLOW__CORE__DAGS_FOLDER="${AIRFLOW_HOME}/dags"
 export AIRFLOW__CORE__PLUGINS_FOLDER="${AIRFLOW_HOME}/plugins"
 export AIRFLOW__CORE__LOAD_EXAMPLES="false"
 export AIRFLOW__CORE__EXECUTOR="LocalExecutor"
-export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AIRFLOW_HOME}/airflow.db"
 export AIRFLOW__LOGGING__BASE_LOG_FOLDER="${AIRFLOW_HOME}/logs"
+
+if [ -n "$DATABASE_URL" ]; then
+    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="$DATABASE_URL"
+    echo "📦 Database: PostgreSQL ($DATABASE_URL)"
+elif [ -n "$POSTGRES_HOST" ]; then
+    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-airflow}"
+    echo "📦 Database: PostgreSQL (${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-airflow})"
+else
+    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AIRFLOW_HOME}/airflow.db"
+    echo "📦 Database: SQLite (${AIRFLOW_HOME}/airflow.db)"
+fi
 
 mkdir -p "${AIRFLOW_HOME}/dags" "${AIRFLOW_HOME}/logs" \
          "${AIRFLOW_HOME}/logs/kharon_monitoring" \

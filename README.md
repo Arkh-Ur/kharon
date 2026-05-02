@@ -176,6 +176,8 @@ Acceder desde Windows:
 
 Todas las variables tienen valores por defecto funcionales. Solo configurar si se necesita cambiar algo.
 
+### General
+
 | Variable | Default | Descripción |
 |---|---|---|
 | `KHARON_HOME` | directorio del script | Raíz del proyecto |
@@ -185,6 +187,39 @@ Todas las variables tienen valores por defecto funcionales. Solo configurar si s
 | `KHARON_AIRFLOW_USER` | `admin` | Usuario de Airflow |
 | `KHARON_AIRFLOW_PASSWORD` | auto (del archivo .generated) | Contraseña de Airflow |
 | `KHARON_PORT` | `8501` | Puerto de la webapp |
+| `AUTO_UPDATE` | `false` | `git pull` al iniciar (Podman) |
+
+### PostgreSQL (opcional — por defecto usa SQLite)
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `DATABASE_URL` | — | Connection string completo: `postgresql+psycopg2://user:pass@host:5432/db` |
+| `POSTGRES_HOST` | — | Host de PostgreSQL (si se setea, usa PostgreSQL en vez de SQLite) |
+| `POSTGRES_PORT` | `5432` | Puerto de PostgreSQL |
+| `POSTGRES_USER` | `airflow` | Usuario de PostgreSQL |
+| `POSTGRES_PASSWORD` | — | Contraseña de PostgreSQL |
+| `POSTGRES_DB` | `airflow` | Base de datos de PostgreSQL |
+
+#### Ejemplo con PostgreSQL
+
+```bash
+# Linux/macOS (nativo):
+export POSTGRES_HOST=db.example.com
+export POSTGRES_USER=airflow
+export POSTGRES_PASSWORD=secret
+export POSTGRES_DB=kharon
+./start_kharon.sh
+
+# Podman:
+POSTGRES_HOST=db.example.com POSTGRES_PASSWORD=secret ./podman-run.sh
+
+# Windows (Podman):
+.\start_kharon.ps1 -PostgresHost db.example.com -PostgresPassword secret
+
+# O con DATABASE_URL completo:
+export DATABASE_URL="postgresql+psycopg2://airflow:secret@db.example.com:5432/kharon"
+./start_kharon.sh
+```
 
 ---
 

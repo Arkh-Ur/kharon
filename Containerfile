@@ -24,7 +24,8 @@ RUN pip install --no-cache-dir \
     "numpy>=1.24" \
     "pandas>=3.0.0" \
     "pyyaml>=6.0" \
-    "requests>=2.31.0"
+    "requests>=2.31.0" \
+    "psycopg2-binary>=2.9.0"
 
 ENV AIRFLOW_HOME=/opt/airflow
 ENV KHARON_HOME=/opt/kharon

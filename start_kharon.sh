@@ -103,13 +103,22 @@ init_airflow() {
              "$AIRFLOW_HOME/logs/kharon_monitoring" \
              "$AIRFLOW_HOME/data" "$AIRFLOW_HOME/plugins"
 
-    # Override airflow.cfg paths via env vars — no hardcoded paths
     export AIRFLOW__CORE__DAGS_FOLDER="${AIRFLOW_HOME}/dags"
     export AIRFLOW__CORE__PLUGINS_FOLDER="${AIRFLOW_HOME}/plugins"
     export AIRFLOW__CORE__LOAD_EXAMPLES="false"
     export AIRFLOW__CORE__EXECUTOR="LocalExecutor"
-    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AIRFLOW_HOME}/airflow.db"
     export AIRFLOW__LOGGING__BASE_LOG_FOLDER="${AIRFLOW_HOME}/logs"
+
+    if [ -n "${DATABASE_URL:-}" ]; then
+        export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="$DATABASE_URL"
+        log_info "Database: PostgreSQL"
+    elif [ -n "${POSTGRES_HOST:-}" ]; then
+        export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-airflow}"
+        log_info "Database: PostgreSQL (${POSTGRES_HOST})"
+    else
+        export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AIRFLOW_HOME}/airflow.db"
+        log_info "Database: SQLite"
+    fi
 
     airflow db migrate 2>&1 | tail -1 || log_warn "Airflow DB migration issue"
 

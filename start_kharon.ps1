@@ -10,7 +10,12 @@ param(
     [string]$AirflowPort = "8080",
     [string]$AirflowUser = "admin",
     [string]$AirflowPassword = "",
-    [string]$KharonPort = "8501"
+    [string]$KharonPort = "8501",
+    [string]$PostgresHost = "",
+    [string]$PostgresPort = "5432",
+    [string]$PostgresUser = "airflow",
+    [string]$PostgresPassword = "",
+    [string]$PostgresDb = "airflow"
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,6 +56,18 @@ if ($Podman) {
     }
 
     Write-Host "[INFO] Starting Kharōn container..." -ForegroundColor Green
+
+    $pgEnv = @()
+    if ($PostgresHost) {
+        $pgEnv += @(
+            "-e", "POSTGRES_HOST=${PostgresHost}",
+            "-e", "POSTGRES_PORT=${PostgresPort}",
+            "-e", "POSTGRES_USER=${PostgresUser}",
+            "-e", "POSTGRES_PASSWORD=${PostgresPassword}",
+            "-e", "POSTGRES_DB=${PostgresDb}"
+        )
+    }
+
     podman run -it --rm `
       --name kharon `
       -p "${AirflowPort}:8080" `
@@ -58,6 +75,7 @@ if ($Podman) {
       -v "${ScriptDir}/airflow_home:/opt/airflow:Z" `
       -e "AUTO_UPDATE=$(if ($AutoUpdate) {'true'} else {'false'})" `
       -e "KHARON_AIRFLOW_PASSWORD=${AirflowPassword}" `
+      @pgEnv `
       $image
     return
 }
@@ -105,6 +123,13 @@ $env:KHARON_AIRFLOW_USER     = $AirflowUser
 $env:KHARON_AIRFLOW_PASSWORD = $AirflowPassword
 $env:KHARON_PORT             = $KharonPort
 $env:AIRFLOW_HOME            = Join-Path $ScriptDir "airflow_home"
+
+if ($PostgresHost) {
+    $env:DATABASE_URL = "postgresql+psycopg2://${PostgresUser}:${PostgresPassword}@${PostgresHost}:${PostgresPort}/${PostgresDb}"
+    Write-Host "[INFO] Database: PostgreSQL ($PostgresHost)" -ForegroundColor Green
+} else {
+    Write-Host "[INFO] Database: SQLite" -ForegroundColor Green
+}
 
 Write-Host "[INFO] Checking Airflow at ${AirflowHost}:${AirflowPort}..." -ForegroundColor Green
 try {
