@@ -66,4 +66,4 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            KHARON_BRANCH=${{ github.ref_name }}
+            KHARON_BRANCH=${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
