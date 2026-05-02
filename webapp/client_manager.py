@@ -132,18 +132,10 @@ class ClientManager:
                 raise
     
     def get_client(self, client_id: str) -> Optional[Client]:
-        """Get a specific client by ID.
-        
-        Args:
-            client_id: The client identifier
-            
-        Returns:
-            Client object or None if not found
-        """
-        if not self._cache_valid:
-            self.load_clients()
-        
-        return deepcopy(self._clients.get(client_id))
+        with self._lock:
+            if not self._cache_valid:
+                self.load_clients()
+            return deepcopy(self._clients.get(client_id))
     
     def get_active_clients(self) -> List[Client]:
         """Get all active clients.

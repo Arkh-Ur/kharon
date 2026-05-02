@@ -1,4 +1,5 @@
 import os
+import threading
 import yaml
 from pathlib import Path
 
@@ -35,12 +36,16 @@ def load_kharon_config() -> dict:
     return {}
 
 
+_config_lock = threading.RLock()
+
+
 def save_kharon_config(updates: dict) -> None:
-    current = load_kharon_config()
-    current.update(updates)
-    KHARON_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    from utils import atomic_write
-    atomic_write(str(KHARON_CONFIG_PATH), yaml.dump(current, allow_unicode=True, default_flow_style=False))
+    with _config_lock:
+        current = load_kharon_config()
+        current.update(updates)
+        KHARON_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        from utils import atomic_write
+        atomic_write(str(KHARON_CONFIG_PATH), yaml.dump(current, allow_unicode=True, default_flow_style=False))
 
 
 def get_dags_dir() -> Path:
@@ -60,7 +65,7 @@ def get_airflow_url() -> str:
     return f"http://{host}:{port}"
 
 
-DAGS_DIR = get_dags_dir()
+DAGS_DIR = get_dags_dir()  # stale after config save — use get_dags_dir() for dynamic resolution
 
 APP_NAME = "Kharōn"
 COMPANY = "Arkh-Ur"

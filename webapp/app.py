@@ -669,9 +669,9 @@ def _dag_client_id(dag: dict) -> str:
 
 
 def _hex_to_rgb(hex_color: str) -> str:
-    """Convert hex color to 'r,g,b' string for use in rgba()."""
+    """Convert hex color to 'r,g,b' string for use in rgba(). Validates format."""
     h = hex_color.lstrip("#")
-    if len(h) != 6:
+    if len(h) != 6 or not all(c in "0123456789abcdefABCDEF" for c in h):
         return "84,91,103"
     return f"{int(h[0:2],16)},{int(h[2:4],16)},{int(h[4:6],16)}"
 
@@ -2359,6 +2359,7 @@ def _page_configuration() -> None:
             _new_cfg["airflow_user"] = _cfg_user
             _new_cfg["airflow_password"] = _cfg_pass
             config.save_kharon_config(_new_cfg)
+            _get_dag_generator.clear()
             _get_airflow_client.clear()
             _get_kharon_dags.clear()
             _get_kharon_dag_list.clear()
