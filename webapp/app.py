@@ -1643,139 +1643,139 @@ def _page_processes() -> None:
                         except Exception as e:
                             st.error(f"Error al actualizar modo: {e}")
 
-            # ── Config editor (expanded) ──
-            if st.session_state.get(_config_show_key, False):
-                st.markdown(
-                    '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);'
-                    'border-radius:10px;padding:12px 14px;margin:8px 0;">',
-                    unsafe_allow_html=True,
-                )
-                if _config_path and os.path.isfile(_config_path):
-                    try:
-                        with open(_config_path, "r", encoding="utf-8") as f:
-                            _config_content = f.read()
-                        st.markdown(
-                            f'<div style="font-family:monospace;font-size:10px;color:#6b7280;'
-                            f'letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">'
-                            f'{safe_html(_config_path)}</div>',
-                            unsafe_allow_html=True,
-                        )
-                        _edited = st.text_area(
-                            "Contenido",
-                            value=_config_content,
-                            key=_config_key,
-                            height=250,
-                            label_visibility="collapsed",
-                        )
-                        _col_save, _col_cancel = st.columns(2)
-                        with _col_save:
-                            if st.button("💾 Guardar", key=f"cfg_save_{dag_id}"):
-                                try:
-                                    if len(_edited) > 500_000:
-                                        st.error("❌ Archivo demasiado grande (máx. 500 KB).")
-                                        st.stop()
-                                    yaml.safe_load(_edited)
-                                    atomic_write(_config_path, _edited)
-                                    st.success("✅ Configuración guardada")
-                                except yaml.YAMLError as e:
-                                    st.error(f"❌ YAML inválido — no se guardó: {e}")
-                                except Exception as e:
-                                    st.error(f"Error al guardar: {e}")
-                        with _col_cancel:
-                            if st.button("✕ Cerrar", key=f"cfg_close_{dag_id}"):
-                                st.session_state[_config_show_key] = False
-                                st.rerun()
-                    except Exception as e:
-                        st.error(f"Error al leer config: {e}")
-                elif _config_path:
-                    st.warning(f"⚠️ Config no encontrado: {_config_path}")
-                _col_assign, _col_close_no = st.columns(2)
-                with _col_assign:
-                    _new_cfg = st.text_input(
-                        "Ruta del archivo de configuración",
-                        value=_config_path or "",
-                        key=f"cfg_assign_{dag_id}",
-                        placeholder="ruta/relativa/config.yaml",
-                    )
-                    if st.button("📎 Asignar config", key=f"cfg_assign_btn_{dag_id}"):
-                        if _new_cfg and _new_cfg.strip():
-                            generator = _get_dag_generator()
-                            registry = generator.get_all_scripts()
-                            if dag_id in registry:
-                                registry[dag_id]["config_file"] = _new_cfg.strip()
-                                generator._save_registry(registry)
-                                _get_kharon_dags.clear()
-                                _get_kharon_dag_list.clear()
-                                st.toast(f"📎 Config asignado: {_new_cfg.strip()}")
-                                st.rerun()
-                        else:
-                            st.warning("⚠️ Ingresá una ruta de archivo")
-                with _col_close_no:
-                    if not _config_path:
-                        if st.button("✕ Cerrar", key=f"cfg_close_no_{dag_id}"):
-                            st.session_state[_config_show_key] = False
-                            st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            # ── Log display ──
-            _log_key = f"log_data_{dag_id}"
-            if _log_key in st.session_state:
-                st.markdown(
-                    '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);'
-                    'border-radius:10px;padding:12px 14px;margin:8px 0;">',
-                    unsafe_allow_html=True,
-                )
-                _col_title, _col_close = st.columns([5, 1])
-                with _col_title:
+                # ── Config editor (expanded) ──
+                if st.session_state.get(_config_show_key, False):
                     st.markdown(
-                        '<span style="font-family:monospace;font-size:10px;letter-spacing:1px;'
-                        'text-transform:uppercase;color:#6b7280;">📄 Log — última ejecución</span>',
+                        '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);'
+                        'border-radius:10px;padding:12px 14px;margin:8px 0;">',
                         unsafe_allow_html=True,
                     )
-                with _col_close:
-                    if st.button("✕", key=f"close_log_{dag_id}"):
-                        del st.session_state[_log_key]
-                        st.rerun()
-                st.code(st.session_state[_log_key], language="log")
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            # ── Delete confirmation ──
-            if st.session_state.get(f"confirm_del_{dag_id}"):
-                st.markdown(
-                    '<div style="background:rgba(239,68,68,0.04);border:1px solid rgba(239,68,68,0.12);'
-                    'border-radius:12px;padding:12px 16px;margin:4px 0;">',
-                    unsafe_allow_html=True,
-                )
-                st.warning(f"⚠️ ¿Eliminar el proceso **{dag_id}**? Se borrará el DAG y su archivo. Esta acción no se puede deshacer.")
-                col_yes, col_no = st.columns(2)
-                with col_yes:
-                    if st.button("✅ Confirmar eliminación", key=f"del_yes_{dag_id}", type="primary"):
-                        _errors = []
+                    if _config_path and os.path.isfile(_config_path):
                         try:
-                            generator = _get_dag_generator()
-                            generator.delete_dag(dag_id)
-                        except Exception as exc:
-                            _errors.append(f"Archivo/registro: {exc}")
-                        try:
-                            client.pause_dag(dag_id, paused=True)
-                            client.delete_dag(dag_id)
-                        except Exception as exc:
-                            _errors.append(f"Airflow API: {exc}")
-                        st.session_state.pop(f"confirm_del_{dag_id}", None)
-                        _get_kharon_dags.clear()
-                        _get_kharon_dag_list.clear()
-                        if _errors:
-                            st.error("Eliminado con errores parciales: " + " | ".join(_errors))
-                        else:
-                            st.toast(f"🗑️ Proceso '{dag_id}' eliminado", icon="🗑️")
-                        st.rerun()
-                with col_no:
-                    if st.button("Cancelar", key=f"del_no_{dag_id}"):
-                        st.session_state.pop(f"confirm_del_{dag_id}", None)
-                        st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
+                            with open(_config_path, "r", encoding="utf-8") as f:
+                                _config_content = f.read()
+                            st.markdown(
+                                f'<div style="font-family:monospace;font-size:10px;color:#6b7280;'
+                                f'letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">'
+                                f'{safe_html(_config_path)}</div>',
+                                unsafe_allow_html=True,
+                            )
+                            _edited = st.text_area(
+                                "Contenido",
+                                value=_config_content,
+                                key=_config_key,
+                                height=250,
+                                label_visibility="collapsed",
+                            )
+                            _col_save, _col_cancel = st.columns(2)
+                            with _col_save:
+                                if st.button("💾 Guardar", key=f"cfg_save_{dag_id}"):
+                                    try:
+                                        if len(_edited) > 500_000:
+                                            st.error("❌ Archivo demasiado grande (máx. 500 KB).")
+                                            st.stop()
+                                        yaml.safe_load(_edited)
+                                        atomic_write(_config_path, _edited)
+                                        st.success("✅ Configuración guardada")
+                                    except yaml.YAMLError as e:
+                                        st.error(f"❌ YAML inválido — no se guardó: {e}")
+                                    except Exception as e:
+                                        st.error(f"Error al guardar: {e}")
+                            with _col_cancel:
+                                if st.button("✕ Cerrar", key=f"cfg_close_{dag_id}"):
+                                    st.session_state[_config_show_key] = False
+                                    st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al leer config: {e}")
+                    elif _config_path:
+                        st.warning(f"⚠️ Config no encontrado: {_config_path}")
+                    _col_assign, _col_close_no = st.columns(2)
+                    with _col_assign:
+                        _new_cfg = st.text_input(
+                            "Ruta del archivo de configuración",
+                            value=_config_path or "",
+                            key=f"cfg_assign_{dag_id}",
+                            placeholder="ruta/relativa/config.yaml",
+                        )
+                        if st.button("📎 Asignar config", key=f"cfg_assign_btn_{dag_id}"):
+                            if _new_cfg and _new_cfg.strip():
+                                generator = _get_dag_generator()
+                                registry = generator.get_all_scripts()
+                                if dag_id in registry:
+                                    registry[dag_id]["config_file"] = _new_cfg.strip()
+                                    generator._save_registry(registry)
+                                    _get_kharon_dags.clear()
+                                    _get_kharon_dag_list.clear()
+                                    st.toast(f"📎 Config asignado: {_new_cfg.strip()}")
+                                    st.rerun()
+                            else:
+                                st.warning("⚠️ Ingresá una ruta de archivo")
+                    with _col_close_no:
+                        if not _config_path:
+                            if st.button("✕ Cerrar", key=f"cfg_close_no_{dag_id}"):
+                                st.session_state[_config_show_key] = False
+                                st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+    
+                # ── Log display ──
+                _log_key = f"log_data_{dag_id}"
+                if _log_key in st.session_state:
+                    st.markdown(
+                        '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);'
+                        'border-radius:10px;padding:12px 14px;margin:8px 0;">',
+                        unsafe_allow_html=True,
+                    )
+                    _col_title, _col_close = st.columns([5, 1])
+                    with _col_title:
+                        st.markdown(
+                            '<span style="font-family:monospace;font-size:10px;letter-spacing:1px;'
+                            'text-transform:uppercase;color:#6b7280;">📄 Log — última ejecución</span>',
+                            unsafe_allow_html=True,
+                        )
+                    with _col_close:
+                        if st.button("✕", key=f"close_log_{dag_id}"):
+                            del st.session_state[_log_key]
+                            st.rerun()
+                    st.code(st.session_state[_log_key], language="log")
+                    st.markdown('</div>', unsafe_allow_html=True)
+    
+                # ── Delete confirmation ──
+                if st.session_state.get(f"confirm_del_{dag_id}"):
+                    st.markdown(
+                        '<div style="background:rgba(239,68,68,0.04);border:1px solid rgba(239,68,68,0.12);'
+                        'border-radius:12px;padding:12px 16px;margin:4px 0;">',
+                        unsafe_allow_html=True,
+                    )
+                    st.warning(f"⚠️ ¿Eliminar el proceso **{dag_id}**? Se borrará el DAG y su archivo. Esta acción no se puede deshacer.")
+                    col_yes, col_no = st.columns(2)
+                    with col_yes:
+                        if st.button("✅ Confirmar eliminación", key=f"del_yes_{dag_id}", type="primary"):
+                            _errors = []
+                            try:
+                                generator = _get_dag_generator()
+                                generator.delete_dag(dag_id)
+                            except Exception as exc:
+                                _errors.append(f"Archivo/registro: {exc}")
+                            try:
+                                client.pause_dag(dag_id, paused=True)
+                                client.delete_dag(dag_id)
+                            except Exception as exc:
+                                _errors.append(f"Airflow API: {exc}")
+                            st.session_state.pop(f"confirm_del_{dag_id}", None)
+                            _get_kharon_dags.clear()
+                            _get_kharon_dag_list.clear()
+                            if _errors:
+                                st.error("Eliminado con errores parciales: " + " | ".join(_errors))
+                            else:
+                                st.toast(f"🗑️ Proceso '{dag_id}' eliminado", icon="🗑️")
+                            st.rerun()
+                    with col_no:
+                        if st.button("Cancelar", key=f"del_no_{dag_id}"):
+                            st.session_state.pop(f"confirm_del_{dag_id}", None)
+                            st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-                # ── Timeline chart (nested dentro del expander de detalles) ──
+                # ── Timeline chart ──
                 with st.expander("📊 Timeline", expanded=False):
                     _dag_chart_fragment(dag_id)
 
