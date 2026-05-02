@@ -678,11 +678,13 @@ def _status_dot_html(state: str) -> str:
     """CSS circle status indicator with glow."""
     colors = {
         "success": "#22c55e", "failed": "#ef4444",
-        "running": "#3b82f6", "queued": "#f59e0b", "never": "#545B67",
+        "running": "#3b82f6", "queued": "#f59e0b",
+        "never": "#545B67", "paused": "#6b7280",
     }
     color = colors.get(state, "#545B67")
     pulse = "animation:pulse-dot 2s infinite;" if state == "running" else ""
-    glow = f"box-shadow:0 0 8px {color};" if state != "never" else ""
+    _no_glow = {"never", "paused"}
+    glow = f"box-shadow:0 0 8px {color};" if state not in _no_glow else ""
     return (
         f'<span style="'
         f'display:inline-block;width:10px;height:10px;'
@@ -1232,6 +1234,7 @@ def _pending_deployments_fragment(pending: list) -> None:
 
     if len(still_pending) < len(pending):
         _get_kharon_dags.clear()
+        _get_kharon_dag_list.clear()
         st.rerun(scope="app")
         return
     st.markdown(
@@ -1281,6 +1284,7 @@ def _pending_deployments_fragment(pending: list) -> None:
             generator = _get_dag_generator()
             generator.delete_dag(_sid)
             _get_kharon_dags.clear()
+            _get_kharon_dag_list.clear()
             st.rerun(scope="app")
 
 
@@ -1320,6 +1324,9 @@ def _page_processes() -> None:
         st.warning(f"No se pudo conectar con Airflow: {e}")
         return
 
+    # Snapshot BEFORE filters — pending check must use the full unfiltered list
+    _af_dag_ids = {d.get("dag_id", "") for d in kharon_dags}
+
     if selected_client != "Todos":
         selected_client_id = client_options.get(selected_client, selected_client)
         filtered_dags = []
@@ -1339,7 +1346,7 @@ def _page_processes() -> None:
             dag_id = dag.get("dag_id", "").lower()
             description = (dag.get("description", "") or "").lower()
             tags = [t.get("name", "").lower() for t in dag.get("tags", [])]
-            
+
             matches = (
                 search_lower in dag_id or
                 search_lower in description or
@@ -1351,7 +1358,7 @@ def _page_processes() -> None:
         kharon_dags = filtered_dags
 
     # ── Pending deployments (in registry but not yet in Airflow) ──
-    _af_dag_ids = {d.get("dag_id", "") for d in kharon_dags}
+    # Uses _af_dag_ids from the UNFILTERED snapshot above
     _pending = []
     if selected_client != "Todos":
         selected_client_id = client_options.get(selected_client, selected_client)
@@ -1467,7 +1474,7 @@ def _page_processes() -> None:
             with _col_left:
                 st.markdown(
                     f'<div style="display:flex;align-items:center;gap:8px;">'
-                    f'{_status_dot_html(last_state)}'
+                    f'{_status_dot_html("paused" if _is_paused else last_state)}'
                     f'<span style="font-weight:700;font-size:1.05em;color:#e5e7eb;'
                     f'font-family:system-ui,sans-serif;">{desc}</span>'
                     f'<span style="color:#4b5563;font-family:monospace;font-size:0.7em;'
@@ -1502,6 +1509,7 @@ def _page_processes() -> None:
                         result = client.trigger_dag(dag_id)
                         st.session_state[_exec_key] = result.get("dag_run_id", "")
                         _get_kharon_dags.clear()
+                        _get_kharon_dag_list.clear()
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error al ejecutar: {e}")
@@ -1553,6 +1561,7 @@ def _page_processes() -> None:
                     try:
                         client.pause_dag(dag_id, paused=not _is_paused)
                         _get_kharon_dags.clear()
+                        _get_kharon_dag_list.clear()
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error al cambiar estado: {e}")
@@ -1621,6 +1630,8 @@ def _page_processes() -> None:
                                 else:
                                     af_client.pause_dag(dag_id, paused=False)
                                 st.toast(f"✅ Modo actualizado: {_mode_labels.get(_new_mode, _new_mode)}")
+                                _get_kharon_dags.clear()
+                                _get_kharon_dag_list.clear()
                                 st.rerun()
                             else:
                                 st.error(f"Error: {', '.join(gen_result.errors)}")
@@ -1693,6 +1704,7 @@ def _page_processes() -> None:
                                 registry[dag_id]["config_file"] = _new_cfg.strip()
                                 generator._save_registry(registry)
                                 _get_kharon_dags.clear()
+                                _get_kharon_dag_list.clear()
                                 st.toast(f"📎 Config asignado: {_new_cfg.strip()}")
                                 st.rerun()
                         else:
@@ -1749,6 +1761,8 @@ def _page_processes() -> None:
                         except Exception as exc:
                             _errors.append(f"Airflow API: {exc}")
                         st.session_state.pop(f"confirm_del_{dag_id}", None)
+                        _get_kharon_dags.clear()
+                        _get_kharon_dag_list.clear()
                         if _errors:
                             st.error("Eliminado con errores parciales: " + " | ".join(_errors))
                         else:
@@ -2275,6 +2289,7 @@ def _page_new_script() -> None:
                 if gen_result.success:
                     st.toast(f"🎉 {result.get('name', '')} creado — redirigiendo a Procesos…", icon="✅")
                     _get_kharon_dags.clear()
+                    _get_kharon_dag_list.clear()
                     st.session_state._nav_target = "⚙️ Procesos"
                     st.rerun()
                 else:
