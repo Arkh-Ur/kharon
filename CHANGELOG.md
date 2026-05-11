@@ -1,58 +1,62 @@
-# Changelog
+# Release v0.7.1: Ejecutables Windows & Tags
 
-All notable changes to Kharōn will be documented in this file.
+## 🇪🇸 Español
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+### 🚀 Nuevas Funcionalidades
+* **Soporte para ejecutables nativos de Windows:** Kharōn ahora soporta la ejecución de archivos `.exe`, `.bat` y `.cmd` como scripts orquestados. Los `.exe` se ejecutan directamente, mientras que `.bat`/`.cmd` se ejecutan a través de `cmd.exe /c`. Esto permite orquestar procesos batch legacy y herramientas compiladas sin modificaciones.
+* **Selector de intérprete ampliado:** El formulario de "Nuevo Script" ahora incluye las opciones Ejecutable (.exe), Batch (.bat), CMD (.cmd) y PowerShell (.ps1) además de Bash, Python y Shell.
+
+### 🐛 Correcciones
+* **Tags visibles en Procesos:** Los tags personalizados creados al registrar un script (ej: `etl`, `diarios`, `producción`) ahora se muestran como pastillas violeta en la tarjeta de cada proceso en la página Procesos. Anteriormente se guardaban correctamente pero no se renderizaban en la interfaz.
 
 ---
 
-## [0.1.0-pre] — 2026-04-28
+## 🇺🇸 English
 
-### Added
+### 🚀 New Features
+* **Windows native executable support:** Kharōn now supports executing `.exe`, `.bat`, and `.cmd` files as orchestrated scripts. `.exe` files run directly, while `.bat`/`.cmd` are executed via `cmd.exe /c`. This enables orchestrating legacy batch processes and compiled tools without modifications.
+* **Expanded interpreter selector:** The "New Script" form now includes Executable (.exe), Batch (.bat), CMD (.cmd), and PowerShell (.ps1) options in addition to Bash, Python, and Shell.
 
-- **Platform core**: Full Kharōn script orchestration platform with Airflow 3.x + Streamlit
-- **7 pages**: Tablero (dashboard), Procesos, Ver Logs, Monitoreo Global, Salud por Cliente, Nuevo Script, Configuración
-- **Airflow 3.x integration**: JWT cookie-based auth, `/api/v2` REST client, health checks, DAG CRUD, log retrieval
-- **Script management**: 5-step wizard form to create scripts with validation, preview, and auto-DAG generation
-- **3 execution modes**: On-demand (`schedule=None`), Continuous (`@continuous`), Scheduled (cron)
-- **Cron scheduling**: Human-readable descriptions in Spanish + quick reference guide
-- **Client management**: CRUD with optional logo upload (PNG/JPG/SVG/BMP), automatic color extraction, color picker
-- **Client filtering**: Per-page filter in Procesos and Monitoreo
-- **KharonOperator**: Custom Airflow operator with ScriptRunner + ScriptMonitor
-- **Script health monitoring**: Per-script success rate, consecutive failure tracking, health bars
-- **Corporate dark theme**: Custom CSS with Kharōn brand palette, SVG logos in sidebar header/footer
-- **Typography system**: Google Fonts (Space Grotesk for headings, DM Sans for body, JetBrains Mono for code)
-- **Accent color system**: `#3b82f6` blue as primary action color across all CTAs and active states
-- **Design audit**: 25 improvements identified and implemented across CRITICAL/HIGH/MEDIUM priorities
-- **Metric cards**: Top accent border per-status color, icons, hover lift animation
-- **Sidebar navigation**: Active state with blue border-left accent, full-width buttons
-- **Status indicators**: CSS circles replacing emoji (cross-platform consistent), pulse animation for running state
-- **Step progress indicator**: Connected circles with checkmarks for completed steps
-- **Summary bar**: Scannable status overview in Procesos page
-- **Mobile responsive design**: Media queries for `< 768px` and `< 480px`, touch targets, collapsible sidebar
-- **Page subtitles**: Contextual description under each page title
-- **Review step**: Card-styled summary with row-by-row layout
-- **Registry info**: Formatted key-value table replacing raw JSON dump
-- **E2E tests**: Playwright test suite for client tags and webapp flows
-- **Design audit document**: `DESIGN_AUDIT.md` with 25 prioritized improvements
+### 🐛 Fixes
+* **Tags visible in Processes:** Custom tags created when registering a script (e.g., `etl`, `daily`, `production`) now display as purple pills on each process card in the Processes page. Previously they were saved correctly but not rendered in the UI.
 
-### Changed
+---
 
-- Metric cards: flat rectangles → accent-bordered cards with icons and hover animation
-- Sidebar buttons: generic gray → active state with blue border-left
-- Status dots: emoji (🟢🔴🟡) → CSS circles with `pulse-dot` animation
-- Step progress: invisible gray boxes → connected circles with ✓ checkmarks
-- Primary buttons: barely visible → high-contrast `#3b82f6` blue
-- Background: flat `#0A0F18` → radial gradient (desktop), flat (mobile)
-- Donut chart: no segment labels → inside labels at 14px with radial orientation
-- Expander charts: 250px → 300px height
-- `st.balloons()` → professional `st.toast()` on script creation
-- Badge sizing: `2px 10px` / `0.78em` → `4px 14px` / `0.82em`
-- Dividers in Configuración and Tablero → subtle spacing
+# Release v0.7.0: Native Windows Daemon & PostgreSQL
 
-### Removed
+## 🇪🇸 Español
 
-- Dead sidebar client filter selectbox (no functionality, `client_filter` session state)
-- Unused `_filter_by_client()` and `_get_client_filter_options()` functions
-- Duplicate `.metric-card` CSS block
-- Conflicting `baseButton-primary` sidebar override
+### 🚀 Nuevas Funcionalidades
+* **Instalación Nativa en Windows (sin Nested Virtualization):** Ahora Kharōn soporta instalación en modo "fall-back" a través de WSL1, ideal para entornos de servidores o máquinas virtuales (ej. QEMU, VirtualBox, AWS) donde los contenedores y WSL2 fallan.
+* **Motor PostgreSQL Integrado:** Se reemplazó el SQLite por defecto con PostgreSQL nativo dentro de WSL. Esto soluciona problemas de latencia y errores de concurrencia (`locking protocol`) característicos del sistema de archivos de Windows, blindando la estabilidad de Apache Airflow.
+* **Ejecución como Demonio (Segundo Plano):** Nuevas herramientas (`start_daemon.ps1` y `stop_daemon.ps1`) permiten lanzar el ecosistema completo (DB + Airflow + Streamlit) de forma silenciosa e invisible.
+* **Servicio de Arranque Automático:** Se integró el instalador `install_service.ps1` para programar Kharōn como una tarea crítica del sistema (Task Scheduler). Ahora arranca automáticamente al encender el equipo con los máximos privilegios, sin siquiera requerir que el usuario inicie sesión.
+
+### 🧹 Mejoras y Correcciones
+* **Limpieza Absoluta del Tablero:** Se deshabilitó explícitamente la inyección de los +40 DAGs de ejemplo (tutoriales) de Apache Airflow (`load_examples=False`). El ambiente inicia impecable.
+* **Autenticación Sincronizada:** Streamlit ahora intercepta y lee dinámicamente el archivo de contraseñas generado al vuelo por Airflow, evitando errores 401 entre el frontend y la API.
+* **Documentación Actualizada:** El archivo `README.md` refleja todo el troubleshooting paso a paso para la nueva arquitectura.
+
+---
+
+## 🇺🇸 English
+
+### 🚀 New Features
+* **Native Windows Installation (No Nested Virtualization):** Kharōn now supports "fall-back" installation via WSL1, ideal for server environments or virtual machines (e.g., QEMU, VirtualBox, AWS) where containers and WSL2 fail.
+* **Integrated PostgreSQL Engine:** Replaced the default SQLite with native PostgreSQL within WSL. This resolves latency and concurrency issues (`locking protocol`) characteristic of the Windows filesystem, ensuring Apache Airflow's stability.
+* **Daemon Execution (Background):** New tools (`start_daemon.ps1` and `stop_daemon.ps1`) allow launching the full ecosystem (DB + Airflow + Streamlit) silently and invisibly.
+* **Automatic Startup Service:** Integrated the `install_service.ps1` installer to schedule Kharōn as a critical system task (Task Scheduler). It now starts automatically upon system boot with maximum privileges, without even requiring user login.
+
+### 🧹 Improvements & Fixes
+* **Absolute Dashboard Cleanup:** Explicitly disabled the injection of 40+ example DAGs (tutorials) from Apache Airflow (`load_examples=False`). The environment starts fresh.
+* **Synchronized Authentication:** Streamlit now intercepts and dynamically reads the password file created on the fly by Airflow, preventing 401 sync errors between the frontend and API.
+* **Updated Documentation:** The `README.md` file now includes a step-by-step troubleshooting guide for the WSL1 architecture.
+
+---
+
+## 🛠 What's Changed
+* style: apply Ākāśa aesthetic to Kharōn webapp by @hbuddenberg in https://github.com/Arkh-Ur/kharon/pull/1
+* docs: container deploy guide — step-by-step, beginner friendly by @hbuddenberg in https://github.com/Arkh-Ur/kharon/pull/2
+
+## ✨ New Contributors
+* @hbuddenberg made their first contribution in https://github.com/Arkh-Ur/kharon/pull/1

@@ -239,10 +239,24 @@ def _step_script_config() -> Optional[Dict]:
             else:
                 st.warning(f"⚠️ El archivo no existe: {script_path}")
 
+    _interpreter_options = ["bash", "python", "sh", "exe", "bat", "cmd", "powershell"]
+    _interpreter_labels = {
+        "bash": "🐚 Bash",
+        "python": "🐍 Python",
+        "sh": "🐚 Shell (sh)",
+        "exe": "⚙️ Ejecutable (.exe)",
+        "bat": "📋 Batch (.bat)",
+        "cmd": "📋 CMD (.cmd)",
+        "powershell": "💠 PowerShell (.ps1)",
+    }
+    _saved_interpreter = st.session_state.form_data.get("interpreter", "bash")
+    if _saved_interpreter not in _interpreter_options:
+        _saved_interpreter = "bash"
     interpreter = st.selectbox(
         "Intérprete",
-        options=["bash", "python", "sh"],
-        index=["bash", "python", "sh"].index(st.session_state.form_data.get("interpreter", "bash")),
+        options=_interpreter_options,
+        index=_interpreter_options.index(_saved_interpreter),
+        format_func=lambda x: _interpreter_labels.get(x, x),
         key="sf_interpreter",
     )
     timeout = st.number_input(
@@ -399,7 +413,7 @@ def _render_file_browser(mode="project") -> None:
             if mode == "config":
                 file_exts = ('.yaml', '.yml', '.json', '.toml', '.env', '.cfg', '.ini', '.conf')
             else:
-                file_exts = ('.py', '.sh', '.bash')
+                file_exts = ('.py', '.sh', '.bash', '.ps1', '.exe', '.bat', '.cmd')
             files = [e for e in entries if os.path.isfile(os.path.join(browse_root, e)) and not e.startswith('.') and e.endswith(file_exts)]
 
         if dirs:

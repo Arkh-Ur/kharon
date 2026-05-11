@@ -4,7 +4,7 @@
 
 **Arkh-Ur — Data Engineering Division**
 
-[![Version](https://img.shields.io/badge/version-0.6.1-blue)](https://github.com/Arkh-Ur/kharon/releases)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue)](https://github.com/Arkh-Ur/kharon/releases)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
 [![Airflow](https://img.shields.io/badge/airflow-3.x-green)](https://airflow.apache.org/)
 [![License](https://img.shields.io/badge/license-Proprietary-red)]()
@@ -187,7 +187,7 @@ Al registrar un nuevo script desde la webapp usá la ruta `/scripts/...`.
 | Tag | Se publica | Uso recomendado |
 |---|---|---|
 | `latest` | Cada push a `main` | Staging / siempre actualizado |
-| `0.6.1` | Al crear el tag `v0.6.1` | **Producción** (versión fija) |
+| `0.7.0` | Al crear el tag `v0.7.0` | **Producción** (versión fija) |
 | `sha-a1b2c3` | Cada commit | Traceability / rollback |
 
 ```bash
@@ -451,7 +451,10 @@ kharon/
 ├── docker-entrypoint.sh      # Container entrypoint
 ├── podman-run.sh             # Podman launcher (Linux/macOS)
 ├── start_kharon.sh           # Inicio Linux/macOS (nativo)
-└── start_kharon.ps1          # Inicio Windows (nativo + Podman)
+├── start_kharon.ps1          # Inicio Windows (nativo + Podman)
+├── start_daemon.ps1          # Inicio Windows modo Demonio (Segundo plano)
+├── stop_daemon.ps1           # Detener Demonio
+└── install_service.ps1       # Instalar como servicio de arranque automático
 ```
 
 ---

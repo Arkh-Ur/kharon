@@ -1484,10 +1484,24 @@ def _page_processes() -> None:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
+
+                # ── User tags (from registry, excluding system tags) ──
+                _user_tags = _registry_meta.get("tags", [])
+                _user_tags_html = ""
+                for _ut in _user_tags:
+                    if not _ut or _ut == "kharon-auto" or _ut.startswith("client_"):
+                        continue
+                    _user_tags_html += (
+                        f'<span style="{_badge_style}'
+                        f'background:rgba(139,92,246,.08);'
+                        f'border:1px solid rgba(139,92,246,.25);color:#a78bfa;">'
+                        f'🏷 {safe_html(_ut)}</span>'
+                    )
+
                 st.markdown(
                     f'<div style="display:flex;align-items:center;gap:6px;margin:4px 0 2px;padding-left:18px;'
                     f'flex-wrap:wrap;">'
-                    f'{_mode_badge}{_pause_badge}'
+                    f'{_mode_badge}{_pause_badge}{_user_tags_html}'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -2282,7 +2296,9 @@ def _page_new_script() -> None:
                     schedule=result.get("schedule"),
                     criticality=result.get("criticality", "media"),
                     tags=result.get("tags", []),
-                    python="python3" if result.get("interpreter") == "python" else "bash",
+                    python={"python": "python3", "bash": "bash", "sh": "sh",
+                            "exe": "exe", "bat": "bat", "cmd": "cmd",
+                            "powershell": "powershell"}.get(result.get("interpreter", "bash"), "bash"),
                     execution_mode=result.get("execution_mode", "on_demand"),
                     config_file=result.get("config_file"),
                     project_path=result.get("project_path"),

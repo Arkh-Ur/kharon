@@ -75,7 +75,7 @@ _filter_kharon_dags(all_dags) → filtered list
 ### Airflow DAGs (`airflow_home/dags/`)
 
 - `operators/kharon_operator.py` — `KharonOperator(BaseOperator)`. Import from `airflow.sdk.bases.operator` (Airflow 3.x), NOT `airflow.models`.
-- `utils/script_runner.py` — Runs `.py`/`.sh` via `subprocess.Popen`. Detects interpreter by extension. Parses `RESULT:{json}` from stdout.
+- `utils/script_runner.py` — Runs `.py`/`.sh`/`.ps1` via `subprocess.Popen`. Supports `.exe` (direct), `.bat`/`.cmd` (via `cmd.exe /c`). Detects interpreter by extension. Parses `RESULT:{json}` from stdout.
 - `utils/script_monitor.py` — Per-script health tracking. Writes to `airflow_home/logs/kharon_monitoring/{script_id}_history.json` (NOT a single report file — one file per script).
 - `config/scripts_registry.yaml` — Manual Airflow config (`scripts: [...]` list format). **Never write from webapp.**
 - `config/generated_scripts.yaml` — Webapp-generated DAG registry (flat dict `{script_id: {metadata}}`). Managed exclusively by `DAGGenerator`.

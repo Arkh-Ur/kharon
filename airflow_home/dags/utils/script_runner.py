@@ -45,7 +45,8 @@ class ScriptRunner:
     """
     Robust script execution engine with timeout handling and result parsing.
     
-    Supports both Python and bash scripts with automatic detection based on file extension.
+    Supports Python, bash, PowerShell scripts, Windows executables (.exe),
+    and batch files (.bat, .cmd) with automatic detection based on file extension.
     Handles timeouts gracefully and parses structured output from scripts.
     """
     
@@ -89,8 +90,15 @@ class ScriptRunner:
         if not script_path_obj.is_file():
             raise ValueError(f"Path is not a file: {script_path}")
             
-        executable = self._detect_python(script_path)
-        command = [executable, str(script_path)]
+        executable = self._detect_interpreter(script_path)
+        if executable is None:
+            # Direct executable (.exe) — no interpreter needed
+            command = [str(script_path)]
+        elif executable == 'cmd.exe':
+            # .bat/.cmd — run via cmd.exe /c
+            command = ['cmd.exe', '/c', str(script_path)]
+        else:
+            command = [executable, str(script_path)]
         
         if args:
             command.extend(args)
@@ -158,19 +166,27 @@ class ScriptRunner:
         
         return result
         
-    def _detect_python(self, script_path: str) -> str:
+    def _detect_interpreter(self, script_path: str) -> str:
         """
-        Detect whether script needs python3 or bash based on file extension.
+        Detect the appropriate interpreter/executor based on file extension.
+        
+        Supports:
+          - .py        → python3 (or configured python)
+          - .sh/.bash  → bash (with Windows Git Bash / WSL fallback)
+          - .ps1       → powershell
+          - .exe       → direct execution (no interpreter)
+          - .bat/.cmd  → cmd.exe /c
         
         Args:
             script_path: Path to the script file
             
         Returns:
-            Command to use for script execution ("python3" or "bash")
+            Interpreter command, or None for direct executables (.exe)
         """
         path_obj = Path(script_path)
+        ext = path_obj.suffix.lower()
 
-        if path_obj.suffix.lower() in ['.sh', '.bash']:
+        if ext in ('.sh', '.bash'):
             # On Windows, look for bash (Git Bash, WSL, or Cygwin)
             if platform.system() == 'Windows':
                 for candidate in ['bash', 'wsl', 'wsl.exe']:
@@ -181,8 +197,12 @@ class ScriptRunner:
                     "Install Git for Windows, WSL2, or run Airflow inside Podman."
                 )
             return 'bash'
-        elif path_obj.suffix.lower() == '.ps1':
+        elif ext == '.ps1':
             return 'powershell'
+        elif ext == '.exe':
+            return None  # direct execution — no interpreter needed
+        elif ext in ('.bat', '.cmd'):
+            return 'cmd.exe'
         else:
             return self.python
             

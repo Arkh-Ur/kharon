@@ -107,7 +107,7 @@ class DAGGenerator:
                     return result
                 
                 # Check if script has valid extension
-                if script_file.suffix.lower() not in ['.py', '.sh', '.bash']:
+                if script_file.suffix.lower() not in ['.py', '.sh', '.bash', '.ps1', '.exe', '.bat', '.cmd']:
                     result.errors.append(f"Unsupported script extension: {script_file.suffix}")
                     return result
                 

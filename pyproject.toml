@@ -1,6 +1,6 @@
 [project]
 name = "kharon"
-version = "0.7.0"
+version = "0.7.1"
 description = "Plataforma de Orquestación y Monitoreo de Scripts — Arkh-Ur"
 readme = "README.md"
 requires-python = ">=3.11"
