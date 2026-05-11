@@ -5,7 +5,7 @@ description = "Plataforma de Orquestación y Monitoreo de Scripts — Arkh-Ur"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
-authors = [{ name = "Arkh-Ur", email = "dev@arkh-ur.com" }]
+authors = [{ name = "Arkh-Ur - Hans Buddenberg", email = "h.buddenberg@gmail.com" }]
 
 dependencies = [
     "apache-airflow>=3.0.0",
