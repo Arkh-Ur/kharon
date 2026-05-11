@@ -1393,6 +1393,8 @@ def _page_processes() -> None:
         with st.container(border=True):
             dag_id = dag.get("dag_id", "")
             desc = safe_html(dag.get("description") or dag_id)
+            _registry_meta = _registry.get(dag_id, {})
+            _reg_description = _registry_meta.get("description", "")
             _raw_schedule = dag.get("schedule", dag.get("schedule_interval"))
             schedule_val = _raw_schedule.get("value", "") if isinstance(_raw_schedule, dict) else (_raw_schedule if isinstance(_raw_schedule, str) else "")
 
@@ -1421,7 +1423,6 @@ def _page_processes() -> None:
                 "continuous": "Continuo",
                 "scheduled": "Agendado",
             }
-            _registry_meta = _registry.get(dag_id, {})
             _reg_mode = _registry_meta.get("execution_mode", "on_demand")
             _pill_color = _mode_pill_colors.get(_reg_mode, "#6b7280")
             _pill_label = _mode_pill_labels.get(_reg_mode, "Demanda")
@@ -1484,6 +1485,14 @@ def _page_processes() -> None:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
+                if _reg_description:
+                    st.markdown(
+                        f'<div style="padding-left:18px;margin:-2px 0 2px;">'
+                        f'<span style="color:#6b7280;font-size:0.78em;'
+                        f'font-family:system-ui,sans-serif;">'
+                        f'{safe_html(_reg_description)}</span></div>',
+                        unsafe_allow_html=True,
+                    )
 
                 # ── User tags (from registry, excluding system tags) ──
                 _user_tags = _registry_meta.get("tags", [])
@@ -2302,6 +2311,7 @@ def _page_new_script() -> None:
                     execution_mode=result.get("execution_mode", "on_demand"),
                     config_file=result.get("config_file"),
                     project_path=result.get("project_path"),
+                    description=result.get("description"),
                 )
                 if gen_result.success:
                     st.toast(f"🎉 {result.get('name', '')} creado — redirigiendo a Procesos…", icon="✅")

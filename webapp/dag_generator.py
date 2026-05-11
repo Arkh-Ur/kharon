@@ -63,7 +63,8 @@ class DAGGenerator:
         python: str = "python3",
         execution_mode: str = "scheduled",
         config_file: Optional[str] = None,
-        project_path: Optional[str] = None
+        project_path: Optional[str] = None,
+        description: Optional[str] = None
     ) -> DAGGenerationResult:
         """Generate a DAG file from script metadata.
         
@@ -124,7 +125,8 @@ class DAGGenerator:
                     tags,
                     python,
                     execution_mode,
-                    config_file
+                    config_file,
+                    description=description,
                 )
                 
                 # Write DAG file
@@ -134,6 +136,7 @@ class DAGGenerator:
                 registry_entry = {
                     "script_id": sanitized_script_id,
                     "script_name": script_name,
+                    "description": description or "",
                     "script_path": str(script_file),
                     "client_id": client_id,
                     "timeout": timeout,
@@ -213,6 +216,7 @@ class DAGGenerator:
                     python=entry.get("python", "python3"),
                     execution_mode=execution_mode,
                     config_file=entry.get("config_file"),
+                    description=entry.get("description"),
                 )
 
                 dag_file_path = self.dags_dir / f"{script_id}.py"
@@ -277,7 +281,8 @@ class DAGGenerator:
         tags: Optional[List[str]],
         python: str,
         execution_mode: str,
-        config_file: Optional[str] = None
+        config_file: Optional[str] = None,
+        description: Optional[str] = None
     ) -> str:
         """Generate complete DAG file content.
         
@@ -361,7 +366,7 @@ default_args = {{
 dag = DAG(
     dag_id='{dag_id}',
     default_args=default_args,
-    description={_safe_script_name},
+    description={repr(description or script_name)},
     schedule={schedule_str},{max_active}
     tags={dag_tags!r},
     catchup=False,
