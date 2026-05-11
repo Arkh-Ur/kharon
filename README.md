@@ -287,6 +287,61 @@ Acceder desde Windows:
 
 ---
 
+### Alternativa: WSL 1 + PostgreSQL (Troubleshooting / Máquinas Virtuales)
+
+Si estás ejecutando Windows **dentro de una Máquina Virtual (ej. QEMU, VirtualBox, AWS)** sin soporte para *Nested Virtualization* (Virtualización Anidada), herramientas como Podman o WSL2 fallarán con el error `HCS_E_HYPERV_NOT_INSTALLED`. 
+
+La solución es utilizar **WSL versión 1**, que no requiere hipervisor de hardware, combinada con **PostgreSQL**, ya que WSL1 tiene un bug conocido con el protocolo de bloqueo de archivos (`locking protocol`) que usa SQLite por defecto en Airflow.
+
+#### 1. Forzar WSL a versión 1 e instalar Ubuntu
+```powershell
+# En PowerShell:
+wsl --set-default-version 1
+wsl --install -d Ubuntu
+```
+
+#### 2. Instalar PostgreSQL en WSL1
+WSL1 requiere iniciar el servicio manualmente porque no soporta `systemd`.
+
+```bash
+# Dentro de la terminal WSL:
+sudo apt update
+sudo apt install -y postgresql postgresql-contrib
+sudo service postgresql start
+
+# Configurar usuario y base de datos para Airflow
+sudo -u postgres psql -c "CREATE USER airflow WITH PASSWORD 'airflow';"
+sudo -u postgres psql -c "CREATE DATABASE airflow;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE airflow TO airflow;"
+sudo -u postgres psql -c "ALTER DATABASE airflow OWNER TO airflow;"
+```
+
+#### 3. Instalar Airflow y conectarlo a PostgreSQL
+```bash
+# Instalar uv y crear entorno
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.bashrc
+
+uv venv ~/airflow-env
+source ~/airflow-env/bin/activate
+
+# Instalar Airflow + Drivers de Postgres (psycopg2 y asyncpg)
+uv pip install "apache-airflow==3.2.0" --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.2.0/constraints-3.12.txt" --link-mode=copy
+uv pip install psycopg2-binary asyncpg
+```
+
+#### 4. Ejecutar
+```bash
+# Configurar la conexión a PostgreSQL en lugar de SQLite
+export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN='postgresql+psycopg2://airflow:airflow@localhost/airflow'
+export AIRFLOW__CORE__EXECUTOR='LocalExecutor'
+
+# Ejecutar el servidor (creará las tablas en Postgres automáticamente)
+airflow standalone
+```
+
+---
+
 ## Variables de Entorno
 
 Todas las variables tienen valores por defecto funcionales. Solo configurar si se necesita cambiar algo.
